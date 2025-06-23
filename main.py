@@ -36,7 +36,10 @@ async def on_ready():
         print(f"[DEBUG] Errore sincronizzazione: {e}")
     print(f"[DEBUG] Bot connesso come {bot.user}")
 
-
+# ✅ Check
+@bot.tree.command(name="check", description="Verifica se il bot è online.")
+async def check(interaction: discord.Interaction):
+    await interaction.response.send_message("Il bot funziona porcodio 🐷⚡", ephemeral=True)
 
 
 # 🚀 Avvio
