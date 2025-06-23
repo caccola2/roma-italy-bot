@@ -53,10 +53,10 @@ async def check(interaction: Interaction):
 
 # 🚀 Avvio
 if __name__ == "__main__":
-    token = os.getenv("DISCORD_TOKEN")
+    token = os.getenv("ROMA_TOKEN")
     print(f"[DEBUG] Token presente: {bool(token)}")
     if token:
         print("[DEBUG] Avvio bot...")
         bot.run(token)
     else:
-        print("[DEBUG] Variabile DISCORD_TOKEN non trovata.")
+        print("[DEBUG] Variabile ROMA_TOKEN non trovata.")
