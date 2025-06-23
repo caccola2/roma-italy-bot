@@ -45,6 +45,7 @@ async def check(interaction: discord.Interaction):
 # 🚀 Avvio
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
+    print(f"[DEBUG] Token presente: {bool(token)}")
     if token:
         print("[DEBUG] Avvio bot...")
         bot.run(token)
