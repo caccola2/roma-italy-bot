@@ -26,7 +26,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# 📨 Categorie dei ticket
+# 📨 Categorie dei ticket (puoi modificarle qui)
 CATEGORIE = {
     "supporto": "🛠 Supporto",
     "reclami": "⚠ Reclami",
@@ -48,18 +48,20 @@ class TicketButton(discord.ui.Button):
     async def callback(self, interaction: Interaction):
         guild = interaction.guild
         user = interaction.user
-        category = discord.utils.get(guild.categories, name="🎫・Tickets")
 
+        # Crea o trova la categoria specifica
+        category_name = f"🌐・{self.label}"
+        category = discord.utils.get(guild.categories, name=category_name)
         if not category:
-            category = await guild.create_category("🎫・Tickets")
+            category = await guild.create_category(category_name)
 
-        # Controlla se esiste già un ticket aperto
-        existing = discord.utils.get(guild.text_channels, name=f"ticket-{user.name.lower()}")
-        if existing:
-            await interaction.response.send_message("Hai già un ticket aperto!", ephemeral=True)
-            return
+        # Verifica se esiste un ticket
+        for channel in category.text_channels:
+            if channel.name == f"ticket-{user.name.lower()}":
+                await interaction.response.send_message("Hai già un ticket aperto!", ephemeral=True)
+                return
 
-        # Crea il canale
+        # Crea canale
         channel = await guild.create_text_channel(
             name=f"ticket-{user.name}",
             category=category,
@@ -67,7 +69,7 @@ class TicketButton(discord.ui.Button):
             permission_overwrites={
                 guild.default_role: discord.PermissionOverwrite(read_messages=False),
                 user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-                guild.me: discord.PermissionOverwrite(read_messages=True)
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
         )
 
@@ -78,7 +80,7 @@ class TicketButton(discord.ui.Button):
 
         await interaction.response.send_message(f"✅ Ticket creato: {channel.mention}", ephemeral=True)
 
-# ❌ Bottone per chiudere
+# ❌ Bottone per chiudere il ticket
 class CloseTicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -93,11 +95,11 @@ class CloseButton(discord.ui.Button):
         await interaction.response.send_message("⏳ Ticket in chiusura...")
         await channel.delete()
 
-# ⚙️ Setup comando
+# ⚙️ Comando di setup
 @bot.tree.command(name="setup_ticket", description="Crea l'embed con i pulsanti per i ticket.")
 async def setup_ticket(interaction: Interaction):
     embed = discord.Embed(
-        title="🎫 Apri un Ticket",
+        title="🎛 Apri un Ticket",
         description="Premi uno dei pulsanti in basso per aprire un ticket con il nostro staff.\n\n"
                     "📌 Seleziona la categoria corretta per ricevere assistenza più rapidamente.",
         color=discord.Color.blue()
@@ -105,7 +107,7 @@ async def setup_ticket(interaction: Interaction):
     await interaction.channel.send(embed=embed, view=TicketView())
     await interaction.response.send_message("✅ Embed creato con successo!", ephemeral=True)
 
-# 📶 Avvio
+# 📶 Keep Alive + Avvio
 @bot.event
 async def on_ready():
     await bot.wait_until_ready()
@@ -134,3 +136,4 @@ if __name__ == "__main__":
         bot.run(token)
     else:
         print("[DEBUG] Variabile ROMA_TOKEN non trovata.")
+
