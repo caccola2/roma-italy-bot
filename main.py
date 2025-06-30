@@ -129,107 +129,79 @@ async def on_ready():
 
 # ✅ MOD PANNEL
 
-MOD_LOG_CHANNEL_ID = 123456789012345678  # Sostituisci con l'ID del tuo canale log
+# ──────────────── UTILITY PER IL LOG ────────────────
 
+async def send_modlog(interaction, action: str, target: Member, reason: str):
+    log_channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+    if log_channel:
+        embed = discord.Embed(title="🛡️ Azione Moderazione", color=discord.Color.orange())
+        embed.add_field(name="Azione", value=action.upper(), inline=True)
+        embed.add_field(name="Staff", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Utente", value=target.mention, inline=True)
+        embed.add_field(name="Motivo", value=reason, inline=False)
+        await log_channel.send(embed=embed)
 
-class ModPanelView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
+# ──────────────── COMANDI MOD ────────────────
 
-    @discord.ui.button(label="Kick", style=discord.ButtonStyle.danger, emoji="🛠️", custom_id="kick")
-    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_action(interaction, action="kick")
-
-    @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger, emoji="🚫", custom_id="ban")
-    async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_action(interaction, action="ban")
-
-    @discord.ui.button(label="Mute", style=discord.ButtonStyle.secondary, emoji="🔇", custom_id="mute")
-    async def mute_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_action(interaction, action="mute")
-
-    @discord.ui.button(label="Unmute", style=discord.ButtonStyle.success, emoji="🔓", custom_id="unmute")
-    async def unmute_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_action(interaction, action="unmute")
-
-    async def handle_action(self, interaction: discord.Interaction, action: str):
-        if not interaction.user.guild_permissions.kick_members:
-            await interaction.response.send_message("⛔ Non hai i permessi per usare questo pannello.", ephemeral=True)
-            return
-
-        modal = UserActionModal(action)
-        await interaction.response.send_modal(modal)
-
-
-class UserActionModal(discord.ui.Modal, title="Mod Panel – Azione Moderazione"):
-    def __init__(self, action: str):
-        self.action = action
-        super().__init__()
-
-    user_input = discord.ui.TextInput(label="Utente (ID o menzione)", placeholder="@utente o ID", required=True)
-    reason = discord.ui.TextInput(label="Motivo", placeholder="Spiega il motivo...", style=discord.TextStyle.paragraph, required=True)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        try:
-            user_id = int(self.user_input.value.strip("<@!>"))
-            target = await guild.fetch_member(user_id)
-        except:
-            await interaction.response.send_message("❌ Utente non valido.", ephemeral=True)
-            return
-
-        reason = self.reason.value
-        action = self.action
-
-        try:
-            if action == "kick":
-                await target.kick(reason=reason)
-            elif action == "ban":
-                await target.ban(reason=reason, delete_message_days=0)
-            elif action == "mute":
-                muted_role = discord.utils.get(guild.roles, name="Muted")
-                if muted_role:
-                    await target.add_roles(muted_role, reason=reason)
-                else:
-                    return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
-            elif action == "unmute":
-                muted_role = discord.utils.get(guild.roles, name="Muted")
-                if muted_role:
-                    await target.remove_roles(muted_role, reason=reason)
-                else:
-                    return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
-
-            await interaction.response.send_message(f"✅ Azione **{action.upper()}** eseguita su {target.mention}", ephemeral=True)
-
-            log_channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
-            if log_channel:
-                embed = discord.Embed(title="🛡️ Azione Moderazione", color=discord.Color.red())
-                embed.add_field(name="Azione", value=action.upper(), inline=True)
-                embed.add_field(name="Staff", value=interaction.user.mention, inline=True)
-                embed.add_field(name="Utente", value=target.mention, inline=True)
-                embed.add_field(name="Motivo", value=reason, inline=False)
-                await log_channel.send(embed=embed)
-
-        except discord.Forbidden:
-            await interaction.response.send_message("❌ Permessi insufficienti per questa azione.", ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f"⚠️ Errore: {e}", ephemeral=True)
-
-
-@bot.tree.command(name="modpanel", description="Invia il pannello di moderazione")
+@bot.tree.command(name="kick", description="Espelli un utente dal server.")
+@app_commands.describe(utente="Utente da espellere", motivo="Motivo dell'espulsione")
 @app_commands.checks.has_permissions(kick_members=True)
-async def modpanel(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="🛡️ Pannello Moderazione",
-        description="Usa i pulsanti qui sotto per moderare gli utenti.",
-        color=discord.Color.blurple()
-    )
-    await interaction.response.send_message(embed=embed, view=ModPanelView(), ephemeral=True)
+async def kick_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
+    try:
+        await utente.kick(reason=motivo)
+        await interaction.response.send_message(f"✅ {utente.mention} è stato **kickato**. Motivo: {motivo}", ephemeral=True)
+        await send_modlog(interaction, "Kick", utente, motivo)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
 
-@modpanel.error
-async def modpanel_error(interaction: discord.Interaction, error):
+@bot.tree.command(name="ban", description="Banna un utente dal server.")
+@app_commands.describe(utente="Utente da bannare", motivo="Motivo del ban")
+@app_commands.checks.has_permissions(ban_members=True)
+async def ban_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
+    try:
+        await utente.ban(reason=motivo, delete_message_days=0)
+        await interaction.response.send_message(f"✅ {utente.mention} è stato **bannato**. Motivo: {motivo}", ephemeral=True)
+        await send_modlog(interaction, "Ban", utente, motivo)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
+
+@bot.tree.command(name="mute", description="Silenzia un utente (aggiunge ruolo Muted).")
+@app_commands.describe(utente="Utente da mutare", motivo="Motivo del mute")
+@app_commands.checks.has_permissions(manage_roles=True)
+async def mute_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
+    muted_role = discord.utils.get(interaction.guild.roles, name="Muted")
+    if not muted_role:
+        return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
+    try:
+        await utente.add_roles(muted_role, reason=motivo)
+        await interaction.response.send_message(f"🔇 {utente.mention} è stato **mutato**. Motivo: {motivo}", ephemeral=True)
+        await send_modlog(interaction, "Mute", utente, motivo)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
+
+@bot.tree.command(name="unmute", description="Rimuove il silenziamento a un utente.")
+@app_commands.describe(utente="Utente da unmutare", motivo="Motivo dell'unmute")
+@app_commands.checks.has_permissions(manage_roles=True)
+async def unmute_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
+    muted_role = discord.utils.get(interaction.guild.roles, name="Muted")
+    if not muted_role:
+        return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
+    try:
+        await utente.remove_roles(muted_role, reason=motivo)
+        await interaction.response.send_message(f"🔓 {utente.mention} è stato **unmutato**. Motivo: {motivo}", ephemeral=True)
+        await send_modlog(interaction, "Unmute", utente, motivo)
+    except discord.Forbidden:
+        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
+
+# ──────────────── ERRORI PERMESSI ────────────────
+
+@kick_cmd.error
+@ban_cmd.error
+@mute_cmd.error
+@unmute_cmd.error
+async def mod_command_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message("❌ Non hai i permessi per usare questo comando.", ephemeral=True)
+        await interaction.response.send_message("⛔ Non hai i permessi per questo comando.", ephemeral=True)
 
 
 
