@@ -127,6 +127,112 @@ async def on_ready():
 
     bot.loop.create_task(keep_alive())
 
+# ✅ MOD PANNEL
+
+MOD_LOG_CHANNEL_ID = 123456789012345678  # Sostituisci con l'ID del tuo canale log
+
+
+class ModPanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Kick", style=discord.ButtonStyle.danger, emoji="🛠️", custom_id="kick")
+    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_action(interaction, action="kick")
+
+    @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger, emoji="🚫", custom_id="ban")
+    async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_action(interaction, action="ban")
+
+    @discord.ui.button(label="Mute", style=discord.ButtonStyle.secondary, emoji="🔇", custom_id="mute")
+    async def mute_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_action(interaction, action="mute")
+
+    @discord.ui.button(label="Unmute", style=discord.ButtonStyle.success, emoji="🔓", custom_id="unmute")
+    async def unmute_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_action(interaction, action="unmute")
+
+    async def handle_action(self, interaction: discord.Interaction, action: str):
+        if not interaction.user.guild_permissions.kick_members:
+            await interaction.response.send_message("⛔ Non hai i permessi per usare questo pannello.", ephemeral=True)
+            return
+
+        modal = UserActionModal(action)
+        await interaction.response.send_modal(modal)
+
+
+class UserActionModal(discord.ui.Modal, title="Mod Panel – Azione Moderazione"):
+    def __init__(self, action: str):
+        self.action = action
+        super().__init__()
+
+    user_input = discord.ui.TextInput(label="Utente (ID o menzione)", placeholder="@utente o ID", required=True)
+    reason = discord.ui.TextInput(label="Motivo", placeholder="Spiega il motivo...", style=discord.TextStyle.paragraph, required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        try:
+            user_id = int(self.user_input.value.strip("<@!>"))
+            target = await guild.fetch_member(user_id)
+        except:
+            await interaction.response.send_message("❌ Utente non valido.", ephemeral=True)
+            return
+
+        reason = self.reason.value
+        action = self.action
+
+        try:
+            if action == "kick":
+                await target.kick(reason=reason)
+            elif action == "ban":
+                await target.ban(reason=reason, delete_message_days=0)
+            elif action == "mute":
+                muted_role = discord.utils.get(guild.roles, name="Muted")
+                if muted_role:
+                    await target.add_roles(muted_role, reason=reason)
+                else:
+                    return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
+            elif action == "unmute":
+                muted_role = discord.utils.get(guild.roles, name="Muted")
+                if muted_role:
+                    await target.remove_roles(muted_role, reason=reason)
+                else:
+                    return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
+
+            await interaction.response.send_message(f"✅ Azione **{action.upper()}** eseguita su {target.mention}", ephemeral=True)
+
+            log_channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
+            if log_channel:
+                embed = discord.Embed(title="🛡️ Azione Moderazione", color=discord.Color.red())
+                embed.add_field(name="Azione", value=action.upper(), inline=True)
+                embed.add_field(name="Staff", value=interaction.user.mention, inline=True)
+                embed.add_field(name="Utente", value=target.mention, inline=True)
+                embed.add_field(name="Motivo", value=reason, inline=False)
+                await log_channel.send(embed=embed)
+
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Permessi insufficienti per questa azione.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"⚠️ Errore: {e}", ephemeral=True)
+
+
+@bot.tree.command(name="modpanel", description="Invia il pannello di moderazione")
+@app_commands.checks.has_permissions(kick_members=True)
+async def modpanel(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🛡️ Pannello Moderazione",
+        description="Usa i pulsanti qui sotto per moderare gli utenti.",
+        color=discord.Color.blurple()
+    )
+    await interaction.response.send_message(embed=embed, view=ModPanelView(), ephemeral=True)
+
+@modpanel.error
+async def modpanel_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message("❌ Non hai i permessi per usare questo comando.", ephemeral=True)
+
+
+
 # 🚀 Avvio
 if __name__ == "__main__":
     token = os.getenv("ROMA_TOKEN")
