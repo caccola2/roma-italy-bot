@@ -51,31 +51,40 @@ async def get_csrf_token(session):
 # ──────────────────────────────
 # COMANDI GRUPPO
 # ──────────────────────────────
-@bot.tree.command(name="accept_group", description="Accetta un utente nel gruppo")
-@app_commands.checks.has_role(PERMESSI_AUTORIZZATI[0])
-async def accept_group(interaction: Interaction, username: str):
+@bot.tree.command(name="set_group_role", description="Imposta un ruolo specifico nel gruppo Roblox per un utente.")
+@has_required_role()
+@app_commands.describe(username="Username dell'utente da modificare", role_name="Nome del ruolo da assegnare")
+async def set_group_role(interaction: discord.Interaction, username: str, role_name: str):
     await interaction.response.defer(ephemeral=True)
+    user_id = await get_user_id(username)
+    if user_id is None:
+        await interaction.followup.send("❌ Errore: Username non trovato.", ephemeral=True)
+        return
+
+    role_id = await get_role_id_by_name(role_name)
+    if role_id is None:
+        await interaction.followup.send("❌ Errore: Nome ruolo non valido.", ephemeral=True)
+        return
+
+    headers = {
+        "Cookie": f".ROBLOSECURITY={ROBLOX_COOKIE}",
+        "Content-Type": "application/json",
+        "X-CSRF-TOKEN": ""
+    }
+
     async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, username)
-        if not user_id:
-            return await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
+        # Ottieni il token CSRF
+        async with session.post("https://auth.roblox.com/v2/logout", headers=headers) as r:
+            headers["X-CSRF-TOKEN"] = r.headers.get("x-csrf-token", "")
 
-        csrf_token = await get_csrf_token(session)
-        headers = {
-            "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "x-csrf-token": csrf_token,
-            "Content-Type": "application/json"
-        }
-
-        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
-        payload = {"roleId": 1}  # ID del ruolo base (default)
-
-        async with session.patch(url, json=payload, headers=headers) as r:
-            if r.status == 200:
-                await interaction.followup.send(f"✅ {username} accettato nel gruppo.", ephemeral=True)
+        async with session.patch(f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}",
+                                 headers=headers,
+                                 json={"roleId": role_id}) as response:
+            if response.status == 200:
+                await interaction.followup.send(f"✅ Ruolo impostato con successo per **{username}**.", ephemeral=True)
             else:
-                data = await r.text()
-                await interaction.followup.send(f"❌ Errore accettazione utente: {r.status} {data}", ephemeral=True)
+                error = await response.text()
+                await interaction.followup.send(f"❌ Errore impostazione ruolo: {response.status} {error}", ephemeral=True)
 
 @bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo")
 @app_commands.checks.has_role(PERMESSI_AUTORIZZATI[0])
