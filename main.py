@@ -28,8 +28,8 @@ Thread(target=run).start()
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-GROUP_ID = 8730810
-PERMESSI_AUTORIZZATI = [1226305676708679740]  # ID del ruolo con permessi
+GROUP_ID = 5043872
+PERMESSI_AUTORIZZATI = [1389416705943666840]  # ID del ruolo con permessi
 COOKIE = os.getenv("ROBLOX_COOKIE")
 
 # ──────────────────────────────
