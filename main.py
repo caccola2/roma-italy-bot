@@ -1,12 +1,16 @@
 import os
 import discord
+import aiohttp
+import sqlite3
+from datetime import datetime
 from discord.ext import commands
-from discord import app_commands, Interaction
+from discord import app_commands, Interaction, Embed, User
 from flask import Flask
 from threading import Thread
-from datetime import datetime, timedelta
 
-# 🌐 Web server
+# ──────────────────────────────
+# FLASK KEEP-ALIVE
+# ──────────────────────────────
 app = Flask('')
 
 @app.route('/')
@@ -18,200 +22,129 @@ def run():
 
 Thread(target=run).start()
 
-# ⚙️ Intents
+# ──────────────────────────────
+# CONFIGURAZIONE
+# ──────────────────────────────
 intents = discord.Intents.default()
 intents.message_content = True
-intents.guilds = True
-intents.members = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
+GROUP_ID = 8730810
+PERMESSI_AUTORIZZATI = [1226305676708679740]  # ID del ruolo con permessi
+COOKIE = os.getenv("ROBLOX_COOKIE")
 
-# 📨 Categorie dei ticket (puoi modificarle qui)
-CATEGORIE = {
-    "supporto": "🛠 Supporto",
-    "reclami": "⚠ Reclami",
-    "partnership": "🤝 Partnership",
-    "altro": "❓ Altro"
-}
+# ──────────────────────────────
+# UTILITY
+# ──────────────────────────────
+def ha_permessi(member):
+    return any(role.id in PERMESSI_AUTORIZZATI for role in member.roles)
 
-# 📌 VIEW con i pulsanti
-class TicketView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        for key, label in CATEGORIE.items():
-            self.add_item(TicketButton(label=label, custom_id=key))
+async def get_user_id(session, username):
+    url = "https://users.roblox.com/v1/usernames/users"
+    async with session.post(url, json={"usernames": [username], "excludeBannedUsers": False}) as resp:
+        data = await resp.json()
+        return data["data"][0]["id"] if data.get("data") else None
 
-class TicketButton(discord.ui.Button):
-    def __init__(self, label, custom_id):
-        super().__init__(label=label, style=discord.ButtonStyle.primary, custom_id=custom_id)
+async def get_csrf_token(session):
+    async with session.post("https://auth.roblox.com/v2/logout") as resp:
+        return resp.headers.get("x-csrf-token")
 
-    async def callback(self, interaction: Interaction):
-        guild = interaction.guild
-        user = interaction.user
+# ──────────────────────────────
+# COMANDI GRUPPO
+# ──────────────────────────────
+@bot.tree.command(name="accept_group", description="Accetta un utente nel gruppo")
+@app_commands.checks.has_role(PERMESSI_AUTORIZZATI[0])
+async def accept_group(interaction: Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        if not user_id:
+            return await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
 
-        # Crea o trova la categoria specifica
-        category_name = f"🌐・{self.label}"
-        category = discord.utils.get(guild.categories, name=category_name)
-        if not category:
-            category = await guild.create_category(category_name)
+        csrf_token = await get_csrf_token(session)
+        headers = {
+            "Cookie": f".ROBLOSECURITY={COOKIE}",
+            "x-csrf-token": csrf_token,
+            "Content-Type": "application/json"
+        }
 
-        # Verifica se esiste un ticket
-        for channel in category.text_channels:
-            if channel.name == f"ticket-{user.name.lower()}":
-                await interaction.response.send_message("Hai già un ticket aperto!", ephemeral=True)
-                return
+        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
+        payload = {"roleId": 1}  # ID del ruolo base (default)
 
-        # Crea canale
-        channel = await guild.create_text_channel(
-            name=f"ticket-{user.name}",
-            category=category,
-            topic=f"Ticket aperto da {user.display_name} per {self.label}",
-            permission_overwrites={
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            }
-        )
+        async with session.patch(url, json=payload, headers=headers) as r:
+            if r.status == 200:
+                await interaction.followup.send(f"✅ {username} accettato nel gruppo.", ephemeral=True)
+            else:
+                data = await r.text()
+                await interaction.followup.send(f"❌ Errore accettazione utente: {r.status} {data}", ephemeral=True)
 
-        await channel.send(
-            f"{user.mention}, il tuo ticket è stato creato per **{self.label}**. Uno staff ti assisterà a breve.",
-            view=CloseTicketView()
-        )
+@bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo")
+@app_commands.checks.has_role(PERMESSI_AUTORIZZATI[0])
+async def kick_group(interaction: Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        if not user_id:
+            return await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
 
-        await interaction.response.send_message(f"✅ Ticket creato: {channel.mention}", ephemeral=True)
+        csrf_token = await get_csrf_token(session)
+        headers = {
+            "Cookie": f".ROBLOSECURITY={COOKIE}",
+            "x-csrf-token": csrf_token,
+            "Content-Type": "application/json"
+        }
 
-# ❌ Bottone per chiudere il ticket
-class CloseTicketView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(CloseButton())
+        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
+        payload = {"roleId": 0}  # Espulsione
 
-class CloseButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label="🔒 Chiudi Ticket", style=discord.ButtonStyle.danger, custom_id="close")
+        async with session.patch(url, json=payload, headers=headers) as r:
+            if r.status == 200:
+                await interaction.followup.send(f"✅ {username} espulso dal gruppo.", ephemeral=True)
+            else:
+                data = await r.text()
+                await interaction.followup.send(f"❌ Errore espulsione: {r.status} {data}", ephemeral=True)
 
-    async def callback(self, interaction: Interaction):
-        channel = interaction.channel
-        await interaction.response.send_message("⏳ Ticket in chiusura...")
-        await channel.delete()
+@bot.tree.command(name="ban_group", description="Banna un utente dal gruppo")
+@app_commands.checks.has_role(PERMESSI_AUTORIZZATI[0])
+async def ban_group(interaction: Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        if not user_id:
+            return await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
 
-# ⚙️ Comando di setup
-@bot.tree.command(name="setup_ticket", description="Crea l'embed con i pulsanti per i ticket.")
-async def setup_ticket(interaction: Interaction):
-    embed = discord.Embed(
-        title="🎛 Apri un Ticket",
-        description="Premi uno dei pulsanti in basso per aprire un ticket con il nostro staff.\n\n"
-                    "📌 Seleziona la categoria corretta per ricevere assistenza più rapidamente.",
-        color=discord.Color.blue()
-    )
-    await interaction.channel.send(embed=embed, view=TicketView())
-    await interaction.response.send_message("✅ Embed creato con successo!", ephemeral=True)
+        csrf_token = await get_csrf_token(session)
+        headers = {
+            "Cookie": f".ROBLOSECURITY={COOKIE}",
+            "x-csrf-token": csrf_token,
+            "Content-Type": "application/json"
+        }
 
-# 📶 Keep Alive + Avvio
+        url = f"https://groups.roblox.com/v1/users/{user_id}/groups/{GROUP_ID}"
+
+        async with session.delete(url, headers=headers) as r:
+            if r.status == 200:
+                await interaction.followup.send(f"✅ {username} bannato dal gruppo.", ephemeral=True)
+            else:
+                data = await r.text()
+                await interaction.followup.send(f"❌ Errore ban: {r.status} {data}", ephemeral=True)
+
+# ──────────────────────────────
+# EVENTO READY
+# ──────────────────────────────
 @bot.event
 async def on_ready():
-    await bot.wait_until_ready()
     try:
         synced = await bot.tree.sync()
-        print(f"[DEBUG] Comandi slash sincronizzati: {len(synced)}")
+        print(f"✅ Bot pronto. Comandi sincronizzati: {len(synced)}")
     except Exception as e:
-        print(f"[DEBUG] Errore sincronizzazione: {e}")
-    print(f"[DEBUG] Bot connesso come {bot.user}")
+        print(f"[ERRORE SYNC]: {e}")
 
-    async def keep_alive():
-        while True:
-            print("[DEBUG] Bot ancora vivo...")
-            now = datetime.utcnow()
-            next_ping = now.replace(second=0, microsecond=0) + timedelta(seconds=30)
-            await discord.utils.sleep_until(next_ping)
-
-    bot.loop.create_task(keep_alive())
-
-# ✅ MOD PANNEL
-
-# ──────────────── UTILITY PER IL LOG ────────────────
-
-async def send_modlog(interaction, action: str, target: Member, reason: str):
-    log_channel = bot.get_channel(MOD_LOG_CHANNEL_ID)
-    if log_channel:
-        embed = discord.Embed(title="🛡️ Azione Moderazione", color=discord.Color.orange())
-        embed.add_field(name="Azione", value=action.upper(), inline=True)
-        embed.add_field(name="Staff", value=interaction.user.mention, inline=True)
-        embed.add_field(name="Utente", value=target.mention, inline=True)
-        embed.add_field(name="Motivo", value=reason, inline=False)
-        await log_channel.send(embed=embed)
-
-# ──────────────── COMANDI MOD ────────────────
-
-@bot.tree.command(name="kick", description="Espelli un utente dal server.")
-@app_commands.describe(utente="Utente da espellere", motivo="Motivo dell'espulsione")
-@app_commands.checks.has_permissions(kick_members=True)
-async def kick_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
-    try:
-        await utente.kick(reason=motivo)
-        await interaction.response.send_message(f"✅ {utente.mention} è stato **kickato**. Motivo: {motivo}", ephemeral=True)
-        await send_modlog(interaction, "Kick", utente, motivo)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-
-@bot.tree.command(name="ban", description="Banna un utente dal server.")
-@app_commands.describe(utente="Utente da bannare", motivo="Motivo del ban")
-@app_commands.checks.has_permissions(ban_members=True)
-async def ban_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
-    try:
-        await utente.ban(reason=motivo, delete_message_days=0)
-        await interaction.response.send_message(f"✅ {utente.mention} è stato **bannato**. Motivo: {motivo}", ephemeral=True)
-        await send_modlog(interaction, "Ban", utente, motivo)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-
-@bot.tree.command(name="mute", description="Silenzia un utente (aggiunge ruolo Muted).")
-@app_commands.describe(utente="Utente da mutare", motivo="Motivo del mute")
-@app_commands.checks.has_permissions(manage_roles=True)
-async def mute_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
-    muted_role = discord.utils.get(interaction.guild.roles, name="Muted")
-    if not muted_role:
-        return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
-    try:
-        await utente.add_roles(muted_role, reason=motivo)
-        await interaction.response.send_message(f"🔇 {utente.mention} è stato **mutato**. Motivo: {motivo}", ephemeral=True)
-        await send_modlog(interaction, "Mute", utente, motivo)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-
-@bot.tree.command(name="unmute", description="Rimuove il silenziamento a un utente.")
-@app_commands.describe(utente="Utente da unmutare", motivo="Motivo dell'unmute")
-@app_commands.checks.has_permissions(manage_roles=True)
-async def unmute_cmd(interaction: discord.Interaction, utente: Member, motivo: str):
-    muted_role = discord.utils.get(interaction.guild.roles, name="Muted")
-    if not muted_role:
-        return await interaction.response.send_message("❌ Ruolo 'Muted' non trovato.", ephemeral=True)
-    try:
-        await utente.remove_roles(muted_role, reason=motivo)
-        await interaction.response.send_message(f"🔓 {utente.mention} è stato **unmutato**. Motivo: {motivo}", ephemeral=True)
-        await send_modlog(interaction, "Unmute", utente, motivo)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-
-# ──────────────── ERRORI PERMESSI ────────────────
-
-@kick_cmd.error
-@ban_cmd.error
-@mute_cmd.error
-@unmute_cmd.error
-async def mod_command_error(interaction: discord.Interaction, error):
-    if isinstance(error, app_commands.errors.MissingPermissions):
-        await interaction.response.send_message("⛔ Non hai i permessi per questo comando.", ephemeral=True)
-
-
-
-# 🚀 Avvio
+# ──────────────────────────────
+# AVVIO BOT
+# ──────────────────────────────
 if __name__ == "__main__":
     token = os.getenv("ROMA_TOKEN")
-    print(f"[DEBUG] Token presente: {bool(token)}")
     if token:
-        print("[DEBUG] Avvio bot...")
         bot.run(token)
     else:
-        print("[DEBUG] Variabile ROMA_TOKEN non trovata.")
-
+        print("[ERRORE] ROMA_TOKEN mancante.")
