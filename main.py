@@ -199,4 +199,66 @@ class ModerazioneView(discord.ui.View):
             color=discord.Color.green()
         )
         try:
-            await self.richiedente.send(embed=
+            await self.richiedente.send(embed=embed_ok)
+        except:
+            await interaction.response.send_message("❌ Impossibile inviare DM all'utente.", ephemeral=True)
+            return
+        await interaction.response.send_message("✅ Richiesta accettata.", ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="Rifiuta", style=discord.ButtonStyle.red)
+    async def rifiuta(self, interaction: Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(MotivazioneRifiutoModal(self.richiedente))
+
+class MotivazioneRifiutoModal(discord.ui.Modal, title="Motivo del rifiuto"):
+    motivo = discord.ui.TextInput(label="Scrivi la motivazione", style=discord.TextStyle.paragraph)
+
+    def __init__(self, utente):
+        super().__init__()
+        self.utente = utente
+
+    async def on_submit(self, interaction: Interaction):
+        embed_ko = Embed(
+            title="📨 Esito cittadinanza",
+            description="Ciao 👋\nLa tua richiesta di cittadinanza è stata **rifiutata**.",
+            color=discord.Color.red()
+        )
+        embed_ko.add_field(name="Motivo del rifiuto", value=self.motivo.value, inline=False)
+        try:
+            await self.utente.send(embed=embed_ko)
+        except:
+            await interaction.response.send_message("❌ Impossibile inviare DM all'utente.", ephemeral=True)
+            return
+        await interaction.response.send_message("❌ Richiesta rifiutata con successo.", ephemeral=True)
+
+@bot.tree.command(name="richiesta_cittadinanza", description="Invia richiesta di cittadinanza")
+async def richiesta_cittadinanza(interaction: Interaction):
+    embed = Embed(
+        title="📨 Richiesta Cittadinanza",
+        description="Per fare richiesta, assicurati di rispettare i seguenti requisiti:",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="✅ Requisiti:", value="- Essere in un gruppo Roblox\n- Essere verificato su Discord", inline=False)
+    await interaction.user.send(embed=embed, view=RichiestaView(interaction.user))
+    await interaction.response.send_message("📩 Ti ho inviato un messaggio privato con i dettagli.", ephemeral=True)
+
+# ──────────────────────────────
+# EVENTO READY
+# ──────────────────────────────
+@bot.event
+async def on_ready():
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Bot pronto. Comandi sincronizzati: {len(synced)}")
+    except Exception as e:
+        print(f"[ERRORE SYNC]: {e}")
+
+# ──────────────────────────────
+# AVVIO BOT
+# ──────────────────────────────
+if __name__ == "__main__":
+    token = os.getenv("ROMA_TOKEN")
+    if token:
+        bot.run(token)
+    else:
+        print("[ERRORE] ROMA_TOKEN mancante.")
