@@ -138,6 +138,89 @@ async def ban_group(interaction: Interaction, username: str):
                 await interaction.followup.send(f"❌ Errore ban: {r.status} {data}", ephemeral=True)
 
 # ──────────────────────────────
+# /richiesta-cittadinanza
+# ──────────────────────────────
+CANALE_RICHIESTE_ID = 1400175826804412536
+
+class RichiestaView(discord.ui.View):
+    def __init__(self, user):
+        super().__init__(timeout=None)
+        self.user = user
+
+    @discord.ui.button(label="Invia Richiesta", style=discord.ButtonStyle.green, emoji="📩")
+    async def invia(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user != self.user:
+            await interaction.response.send_message("Questa richiesta non è per te.", ephemeral=True)
+            return
+
+        embed_richiesta = discord.Embed(
+            title="📨 Nuova Richiesta di Cittadinanza",
+            description=f"**Utente:** {self.user.mention} ({self.user.name})\n**ID:** `{self.user.id}`",
+            color=discord.Color.blurple()
+        )
+        view_moderazione = ModerazioneView(self.user)
+        canale = bot.get_channel(CANALE_RICHIESTE_ID)
+        await canale.send(embed=embed_richiesta, view=view_moderazione)
+        await interaction.response.send_message("✅ Richiesta inviata con successo!", ephemeral=True)
+        self.stop()
+
+class ModerazioneView(discord.ui.View):
+    def __init__(self, richiedente):
+        super().__init__(timeout=None)
+        self.richiedente = richiedente
+
+    @discord.ui.button(label="Accetta", style=discord.ButtonStyle.green)
+    async def accetta(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed_ok = discord.Embed(
+            title="📨 Esito cittadinanza",
+            description=f"Ciao 👋\nLa tua richiesta di cittadinanza è stata accettata! 🟢",
+            color=discord.Color.green()
+        )
+        try:
+            await self.richiedente.send(embed=embed_ok)
+        except:
+            await interaction.response.send_message("❌ Impossibile inviare DM all'utente.", ephemeral=True)
+            return
+        await interaction.response.send_message("✅ Richiesta accettata.", ephemeral=True)
+        self.stop()
+
+    @discord.ui.button(label="Rifiuta", style=discord.ButtonStyle.red)
+    async def rifiuta(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(MotivazioneRifiutoModal(self.richiedente))
+
+class MotivazioneRifiutoModal(discord.ui.Modal, title="Motivo del rifiuto"):
+    motivo = discord.ui.TextInput(label="Scrivi la motivazione", style=discord.TextStyle.paragraph)
+
+    def __init__(self, utente):
+        super().__init__()
+        self.utente = utente
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed_ko = discord.Embed(
+            title="📨 Esito cittadinanza",
+            description="Ciao 👋\nLa tua richiesta di cittadinanza è stata **rifiutata**. 📩",
+            color=discord.Color.red()
+        )
+        embed_ko.add_field(name="Motivo del rifiuto", value=f"{self.motivo.value}", inline=False)
+        try:
+            await self.utente.send(embed=embed_ko)
+        except:
+            await interaction.response.send_message("❌ Impossibile inviare DM all'utente.", ephemeral=True)
+            return
+        await interaction.response.send_message("❌ Richiesta rifiutata con successo.", ephemeral=True)
+
+@bot.tree.command(name="richiesta_cittadinanza", description="Invia richiesta di cittadinanza")
+async def richiesta_cittadinanza(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📨 Richiesta Cittadinanza",
+        description="Per fare richiesta, assicurati di rispettare i seguenti requisiti:",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="✅ Requisiti:", value="- Essere in un gruppo Roblox\n- Essere verificato su Discord", inline=False)
+    await interaction.user.send(embed=embed, view=RichiestaView(interaction.user))
+    await interaction.response.send_message("📩 Ti ho inviato un messaggio privato con i dettagli.", ephemeral=True)
+
+# ──────────────────────────────
 # EVENTO READY
 # ──────────────────────────────
 @bot.event
