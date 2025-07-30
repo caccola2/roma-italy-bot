@@ -164,120 +164,113 @@ async def ban_group(interaction: Interaction, username: str):
 # ──────────────────────────────
 # RICHIESTA CITTADINANZA
 # ──────────────────────────────
-CITTADINANZA_CHANNEL_ID = 123456789012345678  # Sostituisci con l'ID reale
-STAFF_ROLE_ID = 1226305676708679740
-
 class RichiestaCittadinanzaView(discord.ui.View):
     def __init__(self, richiedente):
         super().__init__(timeout=None)
         self.richiedente = richiedente
-        self.dm_message = None
 
-    @discord.ui.button(label="📨 Invia Richiesta", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="📨 Invia Richiesta", style=discord.ButtonStyle.success)
     async def invia_richiesta(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user != self.richiedente:
-            return await interaction.response.send_message("❌ Non puoi usare questo pulsante.", ephemeral=True)
+            await interaction.response.send_message("❌ Solo l'utente che ha richiesto la cittadinanza può usare questo pulsante.", ephemeral=True)
+            return
 
-        await interaction.response.defer(ephemeral=True)
-        canale = bot.get_channel(CITTADINANZA_CHANNEL_ID)
+        await interaction.message.delete()  # Elimina il messaggio DM
 
         embed = discord.Embed(
-            title="📬 Nuova Richiesta di Cittadinanza",
-            description=f"**Utente:** {self.richiedente.mention} (`{self.richiedente.id}`)",
-            color=discord.Color.orange()
+            title="📥 Nuova Richiesta di Cittadinanza",
+            description=f"**Utente:** {self.richiedente.mention}\n**ID:** `{self.richiedente.id}`",
+            color=discord.Color.gold()
         )
-        if self.richiedente.avatar:
-            embed.set_thumbnail(url=self.richiedente.avatar.url)
+        embed.set_thumbnail(url=self.richiedente.display_avatar.url)
+        embed.set_footer(text="Esamina la richiesta e scegli un'azione.")
 
-        embed.set_footer(text="Premi un pulsante per gestire la richiesta.")
         view = GestioneRichiestaView(self.richiedente)
-        await canale.send(embed=embed, view=view)
 
-        # Cancella il messaggio in DM
-        if self.dm_message:
-            try:
-                await self.dm_message.delete()
-            except discord.HTTPException:
-                pass
+        ID_CANALE = 123456789012345678  # <-- Sostituisci con l'ID del canale corretto
+        canale = interaction.client.get_channel(ID_CANALE)
+
+        if canale is None:
+            await interaction.response.send_message("❌ Errore interno: canale di destinazione non trovato.", ephemeral=True)
+            return
+
+        messaggio = await canale.send(embed=embed, view=view)
+        view.messaggio = messaggio  # Salva per aggiornare dopo
+        await interaction.response.send_message("✅ Richiesta inviata correttamente.", ephemeral=True)
 
 class GestioneRichiestaView(discord.ui.View):
     def __init__(self, richiedente):
         super().__init__(timeout=None)
         self.richiedente = richiedente
+        self.messaggio = None
 
-    @discord.ui.button(label="✅ Accetta", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="✅ Accetta", style=discord.ButtonStyle.success)
     async def accetta(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not any(role.id == STAFF_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("❌ Non hai il permesso per questa azione.", ephemeral=True)
+        embed_dm = discord.Embed(
+            title="🏛️ Cittadinanza Approvata",
+            description="La tua richiesta di cittadinanza è stata **approvata**! Benvenuto/a ufficialmente.",
+            color=discord.Color.green()
+        )
+        await self.richiedente.send(embed=embed_dm)
 
-        await interaction.response.defer()
-        try:
-            await self.richiedente.send(embed=discord.Embed(
-                title="✅ Richiesta Approvata",
-                description="La tua richiesta di cittadinanza è stata **approvata**.",
-                color=discord.Color.green()
-            ).set_footer(text="Cittadinanza | Approvata"))
-        except discord.Forbidden:
-            pass
+        embed_canale = self.messaggio.embeds[0]
+        embed_canale.add_field(name="Esito", value="✅ Accettato", inline=False)
+        embed_canale.color = discord.Color.green()
+        await self.messaggio.edit(embed=embed_canale, view=None)
 
-        embed = interaction.message.embeds[0]
-        embed.color = discord.Color.green()
-        embed.add_field(name="Esito", value="✅ Approvato", inline=False)
-        await interaction.message.edit(embed=embed, view=None)
+        await interaction.response.send_message("Hai accettato la richiesta ✅", ephemeral=True)
 
-    @discord.ui.button(label="❌ Rifiuta", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="❌ Rifiuta", style=discord.ButtonStyle.danger)
     async def rifiuta(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not any(role.id == STAFF_ROLE_ID for role in interaction.user.roles):
-            return await interaction.response.send_message("❌ Non hai il permesso per questa azione.", ephemeral=True)
-
-        await interaction.response.send_modal(MotivazioneRifiutoModal(self.richiedente, interaction.message))
+        await interaction.response.send_modal(MotivazioneRifiutoModal(self))
 
 class MotivazioneRifiutoModal(discord.ui.Modal, title="Motivazione del Rifiuto"):
-    motivazione = discord.ui.TextInput(label="Motivazione", style=discord.TextStyle.paragraph, required=True)
+    motivazione = discord.ui.TextInput(
+        label="Motivo del rifiuto",
+        placeholder="Spiega il motivo del rifiuto...",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
 
-    def __init__(self, richiedente, messaggio):
+    def __init__(self, view):
         super().__init__()
-        self.richiedente = richiedente
-        self.messaggio = messaggio
+        self.view = view
 
     async def on_submit(self, interaction: discord.Interaction):
-        try:
-            await self.richiedente.send(embed=discord.Embed(
-                title="❌ Richiesta Rifiutata",
-                description=f"La tua richiesta di cittadinanza è stata **rifiutata**.\n\n**Motivazione:** {self.motivazione.value}",
-                color=discord.Color.red()
-            ).set_footer(text="Cittadinanza | Rifiutata"))
-        except discord.Forbidden:
-            pass
+        embed_dm = discord.Embed(
+            title="🏛️ Cittadinanza Rifiutata",
+            description="La tua richiesta di cittadinanza è stata **rifiutata**.",
+            color=discord.Color.red()
+        )
+        embed_dm.add_field(name="Motivazione", value=self.motivazione.value, inline=False)
+        await self.view.richiedente.send(embed=embed_dm)
 
-        embed = self.messaggio.embeds[0]
-        embed.color = discord.Color.red()
-        embed.add_field(name="Esito", value="❌ Rifiutato", inline=False)
-        embed.add_field(name="Motivazione", value=self.motivazione.value, inline=False)
-        await self.messaggio.edit(embed=embed, view=None)
-        await interaction.response.send_message("❌ Richiesta rifiutata correttamente.", ephemeral=True)
+        embed_canale = self.view.messaggio.embeds[0]
+        embed_canale.add_field(name="Esito", value="❌ Rifiutato", inline=False)
+        embed_canale.add_field(name="Motivazione", value=self.motivazione.value, inline=False)
+        embed_canale.color = discord.Color.red()
+        await self.view.messaggio.edit(embed=embed_canale, view=None)
 
-@bot.tree.command(name="richiesta_cittadinanza", description="Richiedi la cittadinanza.")
+        await interaction.response.send_message("Hai rifiutato la richiesta ❌", ephemeral=True)
+
+@bot.tree.command(name="richiesta_cittadinanza", description="Invia una richiesta per ottenere la cittadinanza.")
 async def richiesta_cittadinanza(interaction: discord.Interaction):
-    view = RichiestaCittadinanzaView(interaction.user)
-
-    embed = discord.Embed(
-        title="Richiesta di Cittadinanza",
-        description=(
-            "**Requisiti:**\n"
-            "- Essere nel Gruppo roblox\n"
-            "- Essere verificati sul Server Discord\n"
-            "Se soddisfi i requisiti, premi il pulsante qui sotto per inviare la richiesta."
-        ),
-        color=discord.Color.blue()
-    ).set_footer(text="Cittadinanza | Modulo")
-
     try:
-        message = await interaction.user.send(embed=embed, view=view)
-        view.dm_message = message
         await interaction.response.send_message("📩 Ti ho inviato un messaggio privato con i dettagli.", ephemeral=True)
+        embed = discord.Embed(
+            title="Richiesta Cittadinanza 🏛️",
+            description=(
+                "**Requisiti per ottenere la cittadinanza:**\n"
+                "- Essere presenti nel Gruppo Roblox\n"
+                "- Essere Verificati nel Server Discord\n"
+            ),
+            color=discord.Color.blurple()
+        )
+        embed.set_footer(text="Premi il pulsante qui sotto per inviare la richiesta.")
+        view = RichiestaCittadinanzaView(interaction.user)
+        await interaction.user.send(embed=embed, view=view)
     except discord.Forbidden:
-        await interaction.response.send_message("❌ Non posso inviarti messaggi privati. Abilita i DM e riprova.", ephemeral=True)
+        await interaction.followup.send("❌ Non posso inviarti un messaggio privato. Controlla le impostazioni della privacy.", ephemeral=True)
 
 # ──────────────────────────────
 # EVENTO READY
