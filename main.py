@@ -7,7 +7,7 @@ from discord import app_commands, Interaction, Embed
 from discord.ui import View, Button, Modal, TextInput
 from datetime import datetime
 
-# Config
+# Configurazione
 GROUP_ID = 8730810
 COOKIE = os.getenv("ROBLOX_COOKIE")
 CANALE_RICHIESTE = 1402403913826701442
@@ -16,35 +16,36 @@ ID_RUOLO_TURISTA = 1400852869489496185
 ID_RUOLO_CITTADINO = 1400856967534215188
 ID_RUOLO_ADMIN = 1226305676708679740
 
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
 
-# Evento: on_ready → sync comandi
+# Evento on_ready → sync comandi
 @bot.event
 async def on_ready():
     try:
-        synced = await bot.tree.sync()
-        print(f"✅ {len(synced)} comandi sincronizzati.")
+        await bot.tree.sync()
+        print("✅ Comandi sincronizzati.")
     except Exception as e:
-        print(f"❌ Errore sync comandi: {e}")
-    print(f"🤖 Bot connesso come {bot.user}")
+        print(f"❌ Errore sincronizzazione: {e}")
+    print(f"🤖 Bot online come {bot.user}")
 
-# DB init
+# Database
 def create_database():
     conn = sqlite3.connect("cittadinanze.db")
     c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS cittadinanze (
-        user_id INTEGER PRIMARY KEY,
-        roblox_username TEXT,
-        roblox_user_id INTEGER,
-        profile_url TEXT
-    )""")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS cittadinanze (
+            user_id INTEGER PRIMARY KEY,
+            roblox_username TEXT,
+            roblox_user_id INTEGER,
+            profile_url TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
 create_database()
 
-# Funzioni utili
+# Utility
 async def get_user_id(session, username: str):
     url = "https://users.roblox.com/v1/usernames/users"
     async with session.post(url, json={"usernames": [username]}) as resp:
@@ -68,7 +69,7 @@ async def get_csrf_token(session):
 
 async def get_role_id_by_name(role_name: str):
     roles_map = {
-        "Cittadino": 1234567,  # Sostituisci con l'ID reale
+        "Cittadino": 1234567,  # Sostituisci con ID reale
     }
     return roles_map.get(role_name)
 
@@ -99,7 +100,7 @@ async def send_esito(bot, user, roblox_username, roblox_user_id, accettato: bool
     )
     embed_log.add_field(name="Utente Discord", value=f"{user} ({user.id})", inline=False)
     embed_log.add_field(name="Username Roblox", value=f"{roblox_username} ({roblox_user_id})", inline=False)
-    embed_log.add_field(name="Esito", value="✅ Accettato" if accettato else f"❌ Rifiutato", inline=False)
+    embed_log.add_field(name="Esito", value="✅ Accettato" if accettato else "❌ Rifiutato", inline=False)
     if motivo:
         embed_log.add_field(name="Motivazione", value=motivo, inline=False)
     embed_log.set_thumbnail(url="https://cdn.discordapp.com/attachments/1104076520292358144/1138941902683539507/Cittadinanza.png")
@@ -109,7 +110,7 @@ async def send_esito(bot, user, roblox_username, roblox_user_id, accettato: bool
     if channel:
         await channel.send(embed=embed_log)
 
-# View di gestione
+# View gestione cittadinanza
 class GestioneRichiestaView(View):
     def __init__(self, bot, richiedente, roblox_username, roblox_user_id):
         super().__init__(timeout=None)
@@ -125,15 +126,10 @@ class GestioneRichiestaView(View):
             await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
             return
 
-        guild = interaction.guild
-        membro = guild.get_member(self.richiedente.id)
+        membro = interaction.guild.get_member(self.richiedente.id)
         if membro:
-            ruolo_turista = guild.get_role(ID_RUOLO_TURISTA)
-            ruolo_cittadino = guild.get_role(ID_RUOLO_CITTADINO)
-            if ruolo_turista in membro.roles:
-                await membro.remove_roles(ruolo_turista)
-            if ruolo_cittadino not in membro.roles:
-                await membro.add_roles(ruolo_cittadino)
+            await membro.remove_roles(interaction.guild.get_role(ID_RUOLO_TURISTA), reason="Cittadinanza accettata")
+            await membro.add_roles(interaction.guild.get_role(ID_RUOLO_CITTADINO), reason="Cittadinanza accettata")
 
         async with aiohttp.ClientSession() as session:
             csrf_token = await get_csrf_token(session)
@@ -155,8 +151,7 @@ class GestioneRichiestaView(View):
         conn = sqlite3.connect("cittadinanze.db")
         c = conn.cursor()
         profile_url = f"https://www.roblox.com/users/{self.roblox_user_id}/profile"
-        c.execute("""INSERT OR REPLACE INTO cittadinanze (user_id, roblox_username, roblox_user_id, profile_url)
-                     VALUES (?, ?, ?, ?)""",
+        c.execute("INSERT OR REPLACE INTO cittadinanze VALUES (?, ?, ?, ?)",
                   (self.richiedente.id, self.roblox_username, self.roblox_user_id, profile_url))
         conn.commit()
         conn.close()
@@ -172,7 +167,7 @@ class GestioneRichiestaView(View):
         await interaction.response.send_modal(MotivazioneRifiutoModal(self))
 
 class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
-    motivo = TextInput(label="Motivo", style=discord.TextStyle.paragraph, required=True)
+    motivo = TextInput(label="Motivo", style=discord.TextStyle.paragraph)
 
     def __init__(self, view: GestioneRichiestaView):
         super().__init__()
@@ -189,26 +184,51 @@ class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
                          self.view.roblox_user_id, False, motivo=self.motivo.value)
         await interaction.response.send_message("❌ Richiesta rifiutata.", ephemeral=True)
 
-# ──────────────────────────────
-# COMANDI SLASH
-# ──────────────────────────────
-@bot.tree.command(name="set_group_role", description="Imposta un ruolo nel gruppo Roblox per un utente.")
-@app_commands.describe(username="Username dell'utente", role_name="Nome del ruolo")
+# ────────────── COMANDI ──────────────
+
+@bot.tree.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
+@app_commands.describe(username="Il tuo username Roblox")
+async def richiedi_cittadinanza(interaction: Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        if not user_id:
+            await interaction.followup.send("❌ Username non valido.", ephemeral=True)
+            return
+
+        if not await is_user_in_group(user_id):
+            await interaction.followup.send("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
+            return
+
+    embed = Embed(title="📝 Nuova Richiesta di Cittadinanza", color=discord.Color.blurple(), timestamp=datetime.utcnow())
+    embed.add_field(name="Utente Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
+    embed.add_field(name="Username Roblox", value=f"{username} ({user_id})", inline=False)
+    embed.add_field(name="Esito", value="⏳ In attesa di revisione", inline=False)
+    embed.set_footer(text="Sistema Cittadinanza")
+
+    view = GestioneRichiestaView(bot, interaction.user, username, user_id)
+    canale = bot.get_channel(CANALE_RICHIESTE)
+    if canale:
+        messaggio = await canale.send(embed=embed, view=view)
+        view.messaggio = messaggio
+        await interaction.followup.send("✅ Richiesta inviata correttamente.", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ Errore: canale richieste non trovato.", ephemeral=True)
+
+@bot.tree.command(name="set_group_role", description="Imposta un ruolo Roblox a un utente.")
+@app_commands.describe(username="Username", role_name="Nome del ruolo Roblox")
 async def set_group_role(interaction: Interaction, username: str, role_name: str):
     if not ha_permessi(interaction.user):
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
     async with aiohttp.ClientSession() as session:
         user_id = await get_user_id(session, username)
-        if not user_id:
-            await interaction.followup.send("❌ Username non trovato.", ephemeral=True)
-            return
-
         role_id = await get_role_id_by_name(role_name)
-        if not role_id:
-            await interaction.followup.send("❌ Nome ruolo non valido.", ephemeral=True)
+        if not user_id or not role_id:
+            await interaction.followup.send("❌ Username o ruolo non valido.", ephemeral=True)
             return
 
         csrf_token = await get_csrf_token(session)
@@ -218,19 +238,17 @@ async def set_group_role(interaction: Interaction, username: str, role_name: str
             "Content-Type": "application/json"
         }
         url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
-        payload = {"roleId": role_id}
-        async with session.patch(url, headers=headers, json=payload) as response:
+        async with session.patch(url, headers=headers, json={"roleId": role_id}) as response:
             if response.status == 200:
-                await interaction.followup.send(f"✅ Ruolo impostato per **{username}**.", ephemeral=True)
+                await interaction.followup.send(f"✅ Ruolo aggiornato per **{username}**.", ephemeral=True)
             else:
-                error = await response.text()
-                await interaction.followup.send(f"❌ Errore: {response.status} {error}", ephemeral=True)
+                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
 
-@bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo.")
+@bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo Roblox.")
 @app_commands.describe(username="Username da espellere")
 async def kick_group(interaction: Interaction, username: str):
     if not ha_permessi(interaction.user):
-        await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
+        await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
@@ -243,12 +261,14 @@ async def kick_group(interaction: Interaction, username: str):
         csrf_token = await get_csrf_token(session)
         headers = {
             "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "X-CSRF-TOKEN": csrf_token,
-            "Content-Type": "application/json"
+            "X-CSRF-TOKEN": csrf_token
         }
         url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
         async with session.delete(url, headers=headers) as response:
             if response.status == 200:
-                await interaction.followup.send(f"✅ Utente **{username}** espulso dal gruppo.", ephemeral=True)
+                await interaction.followup.send(f"✅ {username} espulso dal gruppo.", ephemeral=True)
             else:
-                await interaction.followup.send(f"❌ Errore durante l'espulsione: {response.status}", ephemeral=True)
+                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
+
+# Avvio
+bot.run(os.getenv("ROMA_TOKEN"))
