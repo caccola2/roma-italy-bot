@@ -4,7 +4,6 @@ import aiohttp
 import sqlite3
 from discord.ext import commands
 from discord import app_commands, Interaction, Embed
-from discord.ui import View, Button, Modal, TextInput
 from datetime import datetime
 
 # Configurazione
@@ -17,6 +16,11 @@ ID_RUOLO_CITTADINO = 1400856967534215188
 ID_RUOLO_ADMIN = 1226305676708679740
 
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all())
+
+# Controllo permessi (esempio, implementa come ti serve)
+def ha_permessi(user: discord.User) -> bool:
+    # Modifica con la logica di permessi vera, ad esempio ruoli o ID utenti admin
+    return any(role.id == ID_RUOLO_ADMIN for role in getattr(user, "roles", []))
 
 # Evento on_ready → sync comandi
 @bot.event
@@ -110,53 +114,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     else:
         await interaction.followup.send("❌ Errore: canale richieste non trovato.", ephemeral=True)
 
-# COMANDO: SET GROUP ROLE
-@bot.tree.command(name="set_group_role", description="Imposta un ruolo Roblox a un utente.")
-@app_commands.describe(username="Username", role_name="Nome del ruolo Roblox")
-async def set_group_role(interaction: Interaction, username: str, role_name: str):
-    await interaction.response.defer(ephemeral=True)
-    async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, username)
-        role_id = await get_role_id_by_name(role_name)
-        if not user_id or not role_id:
-            await interaction.followup.send("❌ Username o ruolo non valido.", ephemeral=True)
-            return
-
-        csrf_token = await get_csrf_token(session)
-        headers = {
-            "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "X-CSRF-TOKEN": csrf_token,
-            "Content-Type": "application/json"
-        }
-        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
-        async with session.patch(url, headers=headers, json={"roleId": role_id}) as response:
-            if response.status == 200:
-                await interaction.followup.send(f"✅ Ruolo aggiornato per **{username}**.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
-
-# COMANDO: KICK GROUP
-@bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo Roblox.")
-@app_commands.describe(username="Username da espellere")
-async def kick_group(interaction: Interaction, username: str):
-    await interaction.response.defer(ephemeral=True)
-    async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, username)
-        if not user_id:
-            await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
-            return
-
-        csrf_token = await get_csrf_token(session)
-        headers = {
-            "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "X-CSRF-TOKEN": csrf_token
-        }
-        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
-        async with session.delete(url, headers=headers) as response:
-            if response.status == 200:
-                await interaction.followup.send(f"✅ {username} espulso dal gruppo.", ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
+# COMANDO: SET GROUP ROLE (con controllo permessi)
 @bot.tree.command(name="set_group_role", description="Imposta un ruolo Roblox a un utente.")
 @app_commands.describe(username="Username", role_name="Nome del ruolo Roblox")
 async def set_group_role(interaction: Interaction, username: str, role_name: str):
@@ -185,6 +143,7 @@ async def set_group_role(interaction: Interaction, username: str, role_name: str
             else:
                 await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
 
+# COMANDO: KICK GROUP (con controllo permessi)
 @bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo Roblox.")
 @app_commands.describe(username="Username da espellere")
 async def kick_group(interaction: Interaction, username: str):
@@ -213,3 +172,4 @@ async def kick_group(interaction: Interaction, username: str):
 
 # Avvio
 bot.run(os.getenv("ROMA_TOKEN"))
+
