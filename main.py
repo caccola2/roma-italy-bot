@@ -29,163 +29,49 @@ async def on_ready():
     print(f"🤖 Bot online come {bot.user}")
 
 # Database
-def create_database():
-    conn = sqlite3.connect("cittadinanze.db")
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS cittadinanze (
-            user_id INTEGER PRIMARY KEY,
-            roblox_username TEXT,
-            roblox_user_id INTEGER,
-            profile_url TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+db = sqlite3.connect("cittadini.db")
+cursor = db.cursor()
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS cittadini (
+        user_id TEXT PRIMARY KEY,
+        username TEXT,
+        roblox_id TEXT,
+        data TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+""")
+db.commit()
 
-create_database()
+# UTILITY FUNCTION
+async def get_user_id(session, username):
+    url = f"https://api.roblox.com/users/get-by-username?username={username}"
+    async with session.get(url) as response:
+        data = await response.json()
+        return data.get("Id") if response.status == 200 else None
 
-# Utility
-async def get_user_id(session, username: str):
-    url = "https://users.roblox.com/v1/usernames/users"
-    async with session.post(url, json={"usernames": [username]}) as resp:
-        data = await resp.json()
-        if data.get("data"):
-            return data["data"][0]["id"]
-    return None
-
-async def is_user_in_group(user_id: int):
+async def is_user_in_group(user_id):
+    url = f"https://groups.roblox.com/v1/users/{user_id}/groups"
     async with aiohttp.ClientSession() as session:
-        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
         async with session.get(url) as resp:
-            return resp.status == 200
+            if resp.status != 200:
+                return False
+            groups = await resp.json()
+            return any(group['id'] == GROUP_ID for group in groups['data'])
+
+async def get_role_id_by_name(role_name):
+    url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            data = await response.json()
+            for role in data.get("roles", []):
+                if role["name"].lower() == role_name.lower():
+                    return role["id"]
+    return None
 
 async def get_csrf_token(session):
-    url = "https://auth.roblox.com/v2/login"
-    async with session.post(url) as resp:
-        if resp.status == 403:
-            return resp.headers.get("x-csrf-token")
-    return None
+    async with session.post("https://auth.roblox.com/v2/logout") as resp:
+        return resp.headers.get("x-csrf-token")
 
-async def get_role_id_by_name(role_name: str):
-    roles_map = {
-        "Cittadino": 1234567,  # Sostituisci con ID reale
-    }
-    return roles_map.get(role_name)
-
-def ha_permessi(user: discord.Member):
-    return any(role.id == ID_RUOLO_ADMIN for role in user.roles)
-
-async def send_esito(bot, user, roblox_username, roblox_user_id, accettato: bool, motivo=None):
-    embed_dm = Embed(
-        title="🏛️ Cittadinanza " + ("Approvata" if accettato else "Rifiutata"),
-        color=discord.Color.green() if accettato else discord.Color.red()
-    )
-    embed_dm.description = (
-        "La tua richiesta di cittadinanza è stata **approvata**! Benvenuto/a."
-        if accettato else "La tua richiesta di cittadinanza è stata **rifiutata**."
-    )
-    if motivo and not accettato:
-        embed_dm.add_field(name="Motivazione", value=motivo, inline=False)
-
-    try:
-        await user.send(embed=embed_dm)
-    except:
-        pass
-
-    embed_log = Embed(
-        title="Nuova valutazione richiesta cittadinanza",
-        color=discord.Color.green() if accettato else discord.Color.red(),
-        timestamp=datetime.utcnow()
-    )
-    embed_log.add_field(name="Utente Discord", value=f"{user} ({user.id})", inline=False)
-    embed_log.add_field(name="Username Roblox", value=f"{roblox_username} ({roblox_user_id})", inline=False)
-    embed_log.add_field(name="Esito", value="✅ Accettato" if accettato else "❌ Rifiutato", inline=False)
-    if motivo:
-        embed_log.add_field(name="Motivazione", value=motivo, inline=False)
-    embed_log.set_thumbnail(url="https://cdn.discordapp.com/attachments/1104076520292358144/1138941902683539507/Cittadinanza.png")
-    embed_log.set_footer(text="Bot Cittadinanza")
-
-    channel = bot.get_channel(CANALE_LOG)
-    if channel:
-        await channel.send(embed=embed_log)
-
-# View gestione cittadinanza
-class GestioneRichiestaView(View):
-    def __init__(self, bot, richiedente, roblox_username, roblox_user_id):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.richiedente = richiedente
-        self.roblox_username = roblox_username
-        self.roblox_user_id = roblox_user_id
-        self.messaggio = None
-
-    @discord.ui.button(label="✅ Accetta", style=discord.ButtonStyle.success)
-    async def accetta(self, interaction: Interaction, button: Button):
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-            return
-
-        membro = interaction.guild.get_member(self.richiedente.id)
-        if membro:
-            await membro.remove_roles(interaction.guild.get_role(ID_RUOLO_TURISTA), reason="Cittadinanza accettata")
-            await membro.add_roles(interaction.guild.get_role(ID_RUOLO_CITTADINO), reason="Cittadinanza accettata")
-
-        async with aiohttp.ClientSession() as session:
-            csrf_token = await get_csrf_token(session)
-            headers = {
-                "Cookie": f".ROBLOSECURITY={COOKIE}",
-                "X-CSRF-TOKEN": csrf_token,
-                "Content-Type": "application/json"
-            }
-            role_id = await get_role_id_by_name("Cittadino")
-            if role_id:
-                url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{self.roblox_user_id}"
-                await session.patch(url, headers=headers, json={"roleId": role_id})
-
-        embed = self.messaggio.embeds[0]
-        embed.color = discord.Color.green()
-        embed.set_field_at(2, name="Esito", value="✅ Accettato", inline=False)
-        await self.messaggio.edit(embed=embed, view=None)
-
-        conn = sqlite3.connect("cittadinanze.db")
-        c = conn.cursor()
-        profile_url = f"https://www.roblox.com/users/{self.roblox_user_id}/profile"
-        c.execute("INSERT OR REPLACE INTO cittadinanze VALUES (?, ?, ?, ?)",
-                  (self.richiedente.id, self.roblox_username, self.roblox_user_id, profile_url))
-        conn.commit()
-        conn.close()
-
-        await send_esito(self.bot, self.richiedente, self.roblox_username, self.roblox_user_id, True)
-        await interaction.response.send_message("✅ Richiesta accettata.", ephemeral=True)
-
-    @discord.ui.button(label="❌ Rifiuta", style=discord.ButtonStyle.danger)
-    async def rifiuta(self, interaction: Interaction, button: Button):
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.response.send_message("❌ Permessi insufficienti.", ephemeral=True)
-            return
-        await interaction.response.send_modal(MotivazioneRifiutoModal(self))
-
-class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
-    motivo = TextInput(label="Motivo", style=discord.TextStyle.paragraph)
-
-    def __init__(self, view: GestioneRichiestaView):
-        super().__init__()
-        self.view = view
-
-    async def on_submit(self, interaction: Interaction):
-        embed = self.view.messaggio.embeds[0]
-        embed.color = discord.Color.red()
-        embed.set_field_at(2, name="Esito", value="❌ Rifiutato", inline=False)
-        embed.add_field(name="Motivazione", value=self.motivo.value, inline=False)
-        await self.view.messaggio.edit(embed=embed, view=None)
-
-        await send_esito(self.view.bot, self.view.richiedente, self.view.roblox_username,
-                         self.view.roblox_user_id, False, motivo=self.motivo.value)
-        await interaction.response.send_message("❌ Richiesta rifiutata.", ephemeral=True)
-
-# ────────────── COMANDI ──────────────
-
+# COMANDO: RICHIESTA CITTADINANZA
 @bot.tree.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
@@ -198,24 +84,79 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
             return
 
         if not await is_user_in_group(user_id):
-            await interaction.followup.send("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
+            embed = Embed(title="❌ Richiesta Rifiutata", color=discord.Color.red(), timestamp=datetime.utcnow())
+            embed.add_field(name="Utente Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
+            embed.add_field(name="Username Roblox", value=f"{username} ({user_id})", inline=False)
+            embed.add_field(name="Esito", value="❌ Rifiutata: Utente non presente nel Gruppo Roblox", inline=False)
+            embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
+            canale_log = bot.get_channel(CANALE_LOG)
+            if canale_log:
+                await canale_log.send(embed=embed)
+            await interaction.followup.send("❌ Richiesta rifiutata automaticamente.", ephemeral=True)
             return
 
     embed = Embed(title="📝 Nuova Richiesta di Cittadinanza", color=discord.Color.blurple(), timestamp=datetime.utcnow())
     embed.add_field(name="Utente Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
     embed.add_field(name="Username Roblox", value=f"{username} ({user_id})", inline=False)
+    embed.add_field(name="Link Profilo", value=f"https://www.roblox.com/users/{user_id}/profile", inline=False)
     embed.add_field(name="Esito", value="⏳ In attesa di revisione", inline=False)
     embed.set_footer(text="Sistema Cittadinanza")
+    embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
 
-    view = GestioneRichiestaView(bot, interaction.user, username, user_id)
     canale = bot.get_channel(CANALE_RICHIESTE)
     if canale:
-        messaggio = await canale.send(embed=embed, view=view)
-        view.messaggio = messaggio
+        await canale.send(embed=embed)
         await interaction.followup.send("✅ Richiesta inviata correttamente.", ephemeral=True)
     else:
         await interaction.followup.send("❌ Errore: canale richieste non trovato.", ephemeral=True)
 
+# COMANDO: SET GROUP ROLE
+@bot.tree.command(name="set_group_role", description="Imposta un ruolo Roblox a un utente.")
+@app_commands.describe(username="Username", role_name="Nome del ruolo Roblox")
+async def set_group_role(interaction: Interaction, username: str, role_name: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        role_id = await get_role_id_by_name(role_name)
+        if not user_id or not role_id:
+            await interaction.followup.send("❌ Username o ruolo non valido.", ephemeral=True)
+            return
+
+        csrf_token = await get_csrf_token(session)
+        headers = {
+            "Cookie": f".ROBLOSECURITY={COOKIE}",
+            "X-CSRF-TOKEN": csrf_token,
+            "Content-Type": "application/json"
+        }
+        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
+        async with session.patch(url, headers=headers, json={"roleId": role_id}) as response:
+            if response.status == 200:
+                await interaction.followup.send(f"✅ Ruolo aggiornato per **{username}**.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
+
+# COMANDO: KICK GROUP
+@bot.tree.command(name="kick_group", description="Espelle un utente dal gruppo Roblox.")
+@app_commands.describe(username="Username da espellere")
+async def kick_group(interaction: Interaction, username: str):
+    await interaction.response.defer(ephemeral=True)
+    async with aiohttp.ClientSession() as session:
+        user_id = await get_user_id(session, username)
+        if not user_id:
+            await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
+            return
+
+        csrf_token = await get_csrf_token(session)
+        headers = {
+            "Cookie": f".ROBLOSECURITY={COOKIE}",
+            "X-CSRF-TOKEN": csrf_token
+        }
+        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
+        async with session.delete(url, headers=headers) as response:
+            if response.status == 200:
+                await interaction.followup.send(f"✅ {username} espulso dal gruppo.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Errore: {response.status}", ephemeral=True)
 @bot.tree.command(name="set_group_role", description="Imposta un ruolo Roblox a un utente.")
 @app_commands.describe(username="Username", role_name="Nome del ruolo Roblox")
 async def set_group_role(interaction: Interaction, username: str, role_name: str):
