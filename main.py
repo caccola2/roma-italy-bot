@@ -33,13 +33,12 @@ def create_database():
 create_database()
 
 # Funzione per recuperare user id da username Roblox
-async def get_user_id(username: str):
-    async with aiohttp.ClientSession() as session:
-        url = "https://users.roblox.com/v1/usernames/users"
-        async with session.post(url, json={"usernames": [username]}) as resp:
-            data = await resp.json()
-            if data.get("data"):
-                return data["data"][0]["id"]
+async def get_user_id(session, username: str):
+    url = "https://users.roblox.com/v1/usernames/users"
+    async with session.post(url, json={"usernames": [username]}) as resp:
+        data = await resp.json()
+        if data.get("data") and len(data["data"]) > 0:
+            return data["data"][0]["id"]
     return None
 
 # Controlla se utente è nel gruppo Roblox
@@ -50,6 +49,30 @@ async def is_user_in_group(user_id: int):
             if resp.status == 200:
                 return True
     return False
+
+# Funzione per ottenere token CSRF
+async def get_csrf_token(session):
+    url = "https://auth.roblox.com/v2/login"
+    async with session.post(url) as resp:
+        # la risposta 403 con header X-CSRF-TOKEN contiene il token
+        if resp.status == 403:
+            return resp.headers.get("x-csrf-token")
+    return None
+
+# Funzione per ottenere l'ID del ruolo Roblox dal nome (da implementare)
+async def get_role_id_by_name(role_name: str):
+    # Per esempio: ritorna un mapping statico, o implementa chiamata API per recuperare i ruoli
+    roles_map = {
+        "Cittadino": 1234567,  # Inserisci l'ID reale del ruolo "Cittadino"
+        # aggiungi altri ruoli se serve
+    }
+    return roles_map.get(role_name)
+
+# Funzione per verificare permessi (modifica con ID ruolo specifico)
+def ha_permessi(user: discord.Member):
+    # Cambia con l'ID ruolo giusto
+    ID_RUOLO_ADMIN = 1226305676708679740
+    return any(role.id == ID_RUOLO_ADMIN for role in user.roles)
 
 # Funzione per inviare esito DM e log canale
 async def send_esito(bot, user, roblox_username, roblox_user_id, accettato: bool, motivo=None):
@@ -100,7 +123,6 @@ class GestioneRichiestaView(View):
             await interaction.response.send_message("❌ Non hai i permessi per usare questo pulsante.", ephemeral=True)
             return
 
-        # Rimuovi ruolo turista e assegna cittadino
         guild = interaction.guild
         membro = guild.get_member(self.richiedente.id)
         if membro:
@@ -111,7 +133,6 @@ class GestioneRichiestaView(View):
             if ruolo_cittadino not in membro.roles:
                 await membro.add_roles(ruolo_cittadino, reason="Cittadinanza accettata")
 
-        # Imposta ruolo Roblox (ruolo base "Cittadino" nel gruppo)
         async with aiohttp.ClientSession() as session:
             csrf_token = await get_csrf_token(session)
             headers = {
@@ -119,7 +140,6 @@ class GestioneRichiestaView(View):
                 "X-CSRF-TOKEN": csrf_token,
                 "Content-Type": "application/json"
             }
-            # Qui devi impostare l'ID ruolo di "Cittadino" nel gruppo Roblox (esempio: ottienilo a mano)
             role_id_cittadino = await get_role_id_by_name("Cittadino")
             url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{self.roblox_user_id}"
             payload = {"roleId": role_id_cittadino}
@@ -127,13 +147,11 @@ class GestioneRichiestaView(View):
                 if resp.status != 200:
                     await interaction.followup.send(f"⚠️ Errore durante l'assegnazione ruolo Roblox ({resp.status})", ephemeral=True)
 
-        # Aggiorna embed nel canale
         embed = self.messaggio.embeds[0]
         embed.color = discord.Color.green()
         embed.set_field_at(2, name="Esito", value="✅ Accettato", inline=False)
         await self.messaggio.edit(embed=embed, view=None)
 
-        # Salva nel database
         conn = sqlite3.connect("cittadinanze.db")
         c = conn.cursor()
         profile_url = f"https://www.roblox.com/users/{self.roblox_user_id}/profile"
@@ -142,7 +160,6 @@ class GestioneRichiestaView(View):
         conn.commit()
         conn.close()
 
-        # Invia DM e log
         await send_esito(self.bot, self.richiedente, self.roblox_username, self.roblox_user_id, True)
         await interaction.response.send_message("Richiesta accettata con successo.", ephemeral=True)
 
@@ -161,14 +178,12 @@ class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
         self.view = view
 
     async def on_submit(self, interaction: Interaction):
-        # Aggiorna embed canale
         embed = self.view.messaggio.embeds[0]
         embed.color = discord.Color.red()
         embed.set_field_at(2, name="Esito", value="❌ Rifiutato", inline=False)
         embed.add_field(name="Motivazione", value=self.motivo.value, inline=False)
         await self.view.messaggio.edit(embed=embed, view=None)
 
-        # Invia DM e log
         await send_esito(
             self.view.bot,
             self.view.richiedente,
@@ -178,6 +193,7 @@ class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
             motivo=self.motivo.value
         )
         await interaction.response.send_message("Richiesta rifiutata con successo.", ephemeral=True)
+
 # ──────────────────────────────
 # COMANDI GRUPPO
 # ──────────────────────────────
@@ -232,69 +248,3 @@ async def kick_group(interaction: Interaction, username: str):
             return
 
         csrf_token = await get_csrf_token(session)
-        headers = {
-            "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "x-csrf-token": csrf_token,
-            "Content-Type": "application/json"
-        }
-
-        url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/users/{user_id}"
-        payload = {"roleId": 0}
-
-        async with session.patch(url, headers=headers, json=payload) as r:
-            if r.status == 200:
-                await interaction.followup.send(f"✅ {username} espulso dal gruppo.", ephemeral=True)
-            else:
-                data = await r.text()
-                await interaction.followup.send(f"❌ Errore espulsione: {r.status} {data}", ephemeral=True)
-
-@bot.tree.command(name="ban_group", description="Banna un utente dal gruppo.")
-@app_commands.describe(username="Username da bannare")
-async def ban_group(interaction: Interaction, username: str):
-    if not ha_permessi(interaction.user):
-        await interaction.response.send_message("❌ Non hai i permessi per usare questo comando.", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-    async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, username)
-        if not user_id:
-            await interaction.followup.send("❌ Utente non trovato.", ephemeral=True)
-            return
-
-        csrf_token = await get_csrf_token(session)
-        headers = {
-            "Cookie": f".ROBLOSECURITY={COOKIE}",
-            "x-csrf-token": csrf_token,
-            "Content-Type": "application/json"
-        }
-
-        url = f"https://groups.roblox.com/v1/users/{user_id}/groups/{GROUP_ID}"
-
-        async with session.delete(url, headers=headers) as r:
-            if r.status == 200:
-                await interaction.followup.send(f"✅ {username} bannato dal gruppo.", ephemeral=True)
-            else:
-                data = await r.text()
-                await interaction.followup.send(f"❌ Errore ban: {r.status} {data}", ephemeral=True)
-
-# ──────────────────────────────
-# EVENTO READY
-# ──────────────────────────────
-@bot.event
-async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Bot pronto. Comandi sincronizzati: {len(synced)}")
-    except Exception as e:
-        print(f"[ERRORE SYNC]: {e}")
-
-# ──────────────────────────────
-# AVVIO BOT
-# ──────────────────────────────
-if __name__ == "__main__":
-    token = os.getenv("ROMA_TOKEN")
-    if token:
-        bot.run(token)
-    else:
-        print("[ERRORE] ROMA_TOKEN mancante.")
