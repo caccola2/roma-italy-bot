@@ -45,14 +45,35 @@ cursor.execute("""
 """)
 db.commit()
 
+import aiohttp
+
+GROUP_ID = 5043872  # Sostituisci con l'ID corretto del tuo gruppo
+
 # UTILITY FUNCTION
 async def get_user_id(session, username):
-    url = f"https://api.roblox.com/users/get-by-username?username={username}"
-    async with session.get(url) as response:
-        data = await response.json()
-        return data.get("Id") if response.status == 200 else None
+    """
+    Restituisce l'ID utente Roblox dato un username, usando l'endpoint aggiornato.
+    """
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [username], "excludeBannedUsers": False}
+    headers = {"Content-Type": "application/json"}
+
+    try:
+        async with session.post(url, json=payload, headers=headers) as response:
+            if response.status != 200:
+                return None
+            data = await response.json()
+            if "data" in data and data["data"]:
+                return data["data"][0]["id"]
+            return None
+    except aiohttp.ClientError as e:
+        print(f"Errore durante il recupero dell'ID utente: {e}")
+        return None
 
 async def is_user_in_group(user_id):
+    """
+    Verifica se l'utente è in un gruppo specifico dato il suo user ID.
+    """
     url = f"https://groups.roblox.com/v1/users/{user_id}/groups"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -62,9 +83,14 @@ async def is_user_in_group(user_id):
             return any(group['id'] == GROUP_ID for group in groups['data'])
 
 async def get_role_id_by_name(role_name):
+    """
+    Restituisce l'ID del ruolo nel gruppo dato il nome del ruolo.
+    """
     url = f"https://groups.roblox.com/v1/groups/{GROUP_ID}/roles"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
+            if response.status != 200:
+                return None
             data = await response.json()
             for role in data.get("roles", []):
                 if role["name"].lower() == role_name.lower():
@@ -72,6 +98,9 @@ async def get_role_id_by_name(role_name):
     return None
 
 async def get_csrf_token(session):
+    """
+    Ottiene il token CSRF necessario per eseguire operazioni protette (es. cambio ruolo, esilio).
+    """
     async with session.post("https://auth.roblox.com/v2/logout") as resp:
         return resp.headers.get("x-csrf-token")
 
