@@ -169,4 +169,12 @@ class MotivazioneRifiutoModal(Modal, title="Motivazione Rifiuto"):
         await self.view.messaggio.edit(embed=embed, view=None)
 
         # Invia DM e log
-        await send_esito(self.view.bot, self.view.richiedente, self.view.roblox
+        await send_esito(
+            self.view.bot,
+            self.view.richiedente,
+            self.view.roblox_username,
+            self.view.roblox_user_id,
+            False,
+            motivo=self.motivo.value
+        )
+        await interaction.response.send_message("Richiesta rifiutata con successo.", ephemeral=True)
