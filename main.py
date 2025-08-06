@@ -68,20 +68,25 @@ async def on_ready():
 @bot.tree.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
+    # ⚠️ DEFER subito per evitare 404 (max 3s)
     await interaction.response.defer(ephemeral=True)
 
     async with aiohttp.ClientSession() as session:
         user_id = await get_user_id(session, username)
         if not user_id:
-            await interaction.followup.send("❌ Username non valido.", ephemeral=True)
+            await interaction.followup.send("❌ Username Roblox non valido.", ephemeral=True)
             return
 
-        if not await is_user_in_group(user_id):
+        in_gruppo = await is_user_in_group(user_id)
+        if not in_gruppo:
             await interaction.followup.send("❌ Non fai parte del gruppo richiesto.", ephemeral=True)
             return
 
-    # ✅ Inserimento nel DB dopo approvazione automatica
-    cursor.execute("INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data) VALUES (?, ?, ?, ?)", (
+    # ✅ Salvataggio nel DB
+    cursor.execute("""
+        INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data)
+        VALUES (?, ?, ?, ?)
+    """, (
         str(interaction.user.id),
         username,
         str(user_id),
@@ -89,13 +94,19 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     ))
     db.commit()
 
-    embed = Embed(title="✅ Cittadinanza Accettata", color=discord.Color.green(), timestamp=datetime.utcnow())
+    # ✅ Embed di conferma
+    embed = Embed(
+        title="✅ Cittadinanza Approvata",
+        color=discord.Color.green(),
+        timestamp=datetime.utcnow()
+    )
     embed.add_field(name="Utente Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
     embed.add_field(name="Username Roblox", value=f"{username} ({user_id})", inline=False)
     embed.add_field(name="Link Profilo", value=f"https://www.roblox.com/users/{user_id}/profile", inline=False)
     embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
     embed.set_footer(text="Sistema Cittadinanza")
 
+    # ✅ Invia in canale log
     canale_log = bot.get_channel(CANALE_LOG)
     if canale_log:
         await canale_log.send(embed=embed)
