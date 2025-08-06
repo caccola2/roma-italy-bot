@@ -1,3 +1,4 @@
+# main.py
 import os
 import discord
 from discord.ext import commands
@@ -17,8 +18,7 @@ ADMIN_ID = 1400852786236887252
 
 intents = discord.Intents.default()
 intents.members = True
-client = commands.Bot(command_prefix="/", intents=intents)
-tree = app_commands.CommandTree(client)
+client = commands.Bot(command_prefix="/", intents=intents)  # ha già client.tree
 
 db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = db_client["roma_bot"]
@@ -32,24 +32,20 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
         username = self.roblox_name.value
 
         async with aiohttp.ClientSession() as session:
-            # Controllo esistenza utente Roblox
             async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}) as resp:
                 data = await resp.json()
                 if not data["data"]:
                     await interaction.response.send_message("❌ Utente Roblox non trovato.", ephemeral=True)
                     return
-
                 user_data = data["data"][0]
                 user_id = user_data["id"]
 
-            # Controllo membership gruppo
             async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
                 data = await resp.json()
                 if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
                     await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
                     return
 
-        # Utente è nel gruppo
         embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
         embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
         embed.add_field(name="Roblox", value=f"{username} (ID: {user_id})")
@@ -65,15 +61,15 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
 # ======= BOT READY =======
 @client.event
 async def on_ready():
-    await tree.sync()
+    await client.tree.sync()
     print(f"Bot connesso come {client.user}")
 
 # ======= COMANDI =======
-@tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
+@client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 async def richiesta(interaction: Interaction):
     await interaction.response.send_modal(CittadinanzaModal())
 
-@tree.command(name="cerca_soggetto", description="Cerca soggetto per nome Roblox")
+@client.tree.command(name="cerca_soggetto", description="Cerca soggetto per nome Roblox")
 async def cerca(interaction: Interaction, roblox_username: str):
     if interaction.user.id != ADMIN_ID:
         await interaction.response.send_message("Non hai il permesso.", ephemeral=True)
@@ -88,7 +84,7 @@ async def cerca(interaction: Interaction, roblox_username: str):
     else:
         await interaction.response.send_message("❌ Nessun soggetto trovato.", ephemeral=True)
 
-@tree.command(name="elimina_soggetto", description="Elimina soggetto dal database")
+@client.tree.command(name="elimina_soggetto", description="Elimina soggetto dal database")
 async def elimina(interaction: Interaction, roblox_username: str):
     if interaction.user.id != ADMIN_ID:
         await interaction.response.send_message("Non hai il permesso.", ephemeral=True)
@@ -102,7 +98,7 @@ async def elimina(interaction: Interaction, roblox_username: str):
 # ======= GESTIONE BUTTON =======
 @client.event
 async def on_interaction(interaction):
-    if not interaction.type == discord.InteractionType.component:
+    if interaction.type != discord.InteractionType.component:
         return
 
     parts = interaction.data['custom_id'].split(":")
@@ -141,3 +137,4 @@ async def on_interaction(interaction):
 
 # ======= AVVIO =======
 client.run(TOKEN)
+
