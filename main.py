@@ -41,11 +41,12 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
                 user_data = data["data"][0]
                 user_id = user_data["id"]
 
-            async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups") as resp:
-                groups = await resp.json()
-                if not any(g["id"] == GROUP_ID for g in groups.get("data", [])):
-                    await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
-                    return
+async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
+    data = await resp.json()
+    if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
+        await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
+        return
+
 
         embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
         embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
