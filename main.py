@@ -125,37 +125,37 @@ async def on_ready():
     print(f"🤖 Bot online come {bot.user}")
 
 # === COMANDO: CERCA CITTADINO ===
-@bot.tree.command(name="cerca_cittadino", description="Cerca un cittadino nel database.")
-@app_commands.describe(discord_id="ID utente Discord da cercare")
-async def cerca_cittadino(interaction: Interaction, discord_id: str):
+@bot.tree.command(name="cerca_cittadino", description="Cerca un cittadino nel database tramite username Roblox.")
+@app_commands.describe(username="Username Roblox da cercare")
+async def cerca_cittadino(interaction: Interaction, username: str):
     if not ha_permessi(interaction.user):
         await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
         return
 
-    cursor.execute("SELECT * FROM cittadini WHERE user_id = ?", (discord_id,))
+    cursor.execute("SELECT * FROM cittadini WHERE username = ?", (username,))
     result = cursor.fetchone()
 
     if result:
-        _, username, roblox_id, data = result
+        user_id, username_db, roblox_id, data = result
         embed = Embed(title="📋 Dati Cittadino", color=discord.Color.blue())
-        embed.add_field(name="Discord ID", value=discord_id, inline=False)
-        embed.add_field(name="Roblox Username", value=username, inline=False)
+        embed.add_field(name="Discord ID", value=user_id, inline=False)
+        embed.add_field(name="Roblox Username", value=username_db, inline=False)
         embed.add_field(name="Roblox ID", value=roblox_id, inline=False)
         embed.add_field(name="Registrato il", value=data, inline=False)
         embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={roblox_id}&width=420&height=420&format=png")
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Nessun cittadino trovato con questo ID.", ephemeral=True)
+        await interaction.response.send_message("❌ Nessun cittadino trovato con questo username Roblox.", ephemeral=True)
 
 # === COMANDO: RIMUOVI CITTADINO ===
-@bot.tree.command(name="rimuovi_cittadino", description="Rimuovi un cittadino dal database.")
-@app_commands.describe(discord_id="ID utente Discord da rimuovere")
-async def rimuovi_cittadino(interaction: Interaction, discord_id: str):
+@bot.tree.command(name="rimuovi_cittadino", description="Rimuovi un cittadino dal database tramite username Roblox.")
+@app_commands.describe(username="Username Roblox da rimuovere")
+async def rimuovi_cittadino(interaction: Interaction, username: str):
     if not ha_permessi(interaction.user):
         await interaction.response.send_message("❌ Non hai i permessi.", ephemeral=True)
         return
 
-    cursor.execute("DELETE FROM cittadini WHERE user_id = ?", (discord_id,))
+    cursor.execute("DELETE FROM cittadini WHERE username = ?", (username,))
     db.commit()
     await interaction.response.send_message("✅ Cittadino rimosso dal database.", ephemeral=True)
 
