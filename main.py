@@ -69,30 +69,27 @@ async def on_ready():
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
     try:
-        if not interaction.response.is_done():
-            try:
-                await interaction.response.defer(ephemeral=True)
-            except discord.NotFound:
-                print("❗ Interazione scaduta o già gestita.")
-                return
-        else:
+        # ✅ Prova defer immediatamente
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.errors.NotFound:
+            print("❗ Interazione scaduta prima del defer.")
+            return
+        except discord.errors.InteractionResponded:
             print("❗ Interazione già gestita.")
             return
 
         async with aiohttp.ClientSession() as session:
-            # ✅ Ottieni user_id da nuovo endpoint Roblox
             user_id = await get_user_id(session, username)
             if not user_id:
                 await interaction.followup.send("❌ Username Roblox non valido o utente non trovato.", ephemeral=True)
                 return
 
-            # ✅ Controlla se l’utente è nel gruppo 5043872
             in_group = await is_user_in_group(session, user_id, 5043872)
             if not in_group:
                 await interaction.followup.send("❌ Non fai parte del gruppo richiesto (5043872).", ephemeral=True)
                 return
 
-        # ✅ Salvataggio nel database
         cursor.execute("""
             INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data)
             VALUES (?, ?, ?, ?)
@@ -104,7 +101,6 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         ))
         db.commit()
 
-        # ✅ Embed da loggare
         embed = discord.Embed(
             title="📜 Nuova Richiesta di Cittadinanza",
             color=discord.Color.blue(),
@@ -116,7 +112,6 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
         embed.set_footer(text="Sistema Cittadinanza")
 
-        # ✅ Invio in canale log
         canale_log = bot.get_channel(CANALE_LOG)
         if canale_log:
             await canale_log.send(embed=embed)
@@ -126,10 +121,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     except Exception as e:
         print(f"[ERRORE INTERNO] {e}")
         try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message("❌ Errore interno. Riprova.", ephemeral=True)
-            else:
-                await interaction.followup.send("❌ Errore interno. Riprova.", ephemeral=True)
+            await interaction.followup.send("❌ Errore interno. Riprova.", ephemeral=True)
         except:
             pass
 
