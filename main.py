@@ -24,7 +24,6 @@ db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongo
 db = db_client["roma_bot"]
 richieste = db["richieste"]
 
-# ======= MODAL =======
 class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
     roblox_name = TextInput(label="Nome utente Roblox", style=TextStyle.short, required=True)
 
@@ -32,6 +31,7 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
         username = self.roblox_name.value
 
         async with aiohttp.ClientSession() as session:
+            # Controllo esistenza utente Roblox
             async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}) as resp:
                 data = await resp.json()
                 if not data["data"]:
@@ -41,13 +41,14 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
                 user_data = data["data"][0]
                 user_id = user_data["id"]
 
-async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
-    data = await resp.json()
-    if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
-        await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
-        return
+            # Controllo membership gruppo con il nuovo endpoint groups/roles
+            async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
+                data = await resp.json()
+                if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
+                    await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
+                    return
 
-
+        # Se arriva qui, l'utente è nel gruppo
         embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
         embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
         embed.add_field(name="Roblox", value=f"{username} (ID: {user_id})")
@@ -59,6 +60,7 @@ async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/rol
         channel = client.get_channel(CANALE_RICHIESTE_ID)
         await channel.send(embed=embed, view=view)
         await interaction.response.send_message("✅ Richiesta inviata.", ephemeral=True)
+
 
 # ======= BOT READY =======
 @client.event
