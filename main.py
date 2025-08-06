@@ -79,20 +79,20 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
             print("❗ Interazione già gestita.")
             return
 
-        # Ottieni l'ID utente Roblox da username
         async with aiohttp.ClientSession() as session:
+            # ✅ Ottieni user_id da nuovo endpoint Roblox
             user_id = await get_user_id(session, username)
             if not user_id:
-                await interaction.followup.send("❌ Username Roblox non valido.", ephemeral=True)
+                await interaction.followup.send("❌ Username Roblox non valido o utente non trovato.", ephemeral=True)
                 return
 
-            # Controlla se è nel gruppo 5043872
-            in_group = await is_user_in_group(user_id, 5043872)
+            # ✅ Controlla se l’utente è nel gruppo 5043872
+            in_group = await is_user_in_group(session, user_id, 5043872)
             if not in_group:
                 await interaction.followup.send("❌ Non fai parte del gruppo richiesto (5043872).", ephemeral=True)
                 return
 
-        # Salvataggio nel DB
+        # ✅ Salvataggio nel database
         cursor.execute("""
             INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data)
             VALUES (?, ?, ?, ?)
@@ -104,7 +104,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         ))
         db.commit()
 
-        # Embed di conferma
+        # ✅ Embed da loggare
         embed = discord.Embed(
             title="📜 Nuova Richiesta di Cittadinanza",
             color=discord.Color.blue(),
@@ -116,7 +116,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
         embed.set_footer(text="Sistema Cittadinanza")
 
-        # Log nel canale
+        # ✅ Invio in canale log
         canale_log = bot.get_channel(CANALE_LOG)
         if canale_log:
             await canale_log.send(embed=embed)
