@@ -69,12 +69,14 @@ async def on_ready():
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
     try:
-        # Defer immediato (previene errore 404)
-        await interaction.response.defer(ephemeral=True)
-        
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            print("❗ Interazione scaduta o già gestita.")
+            return
+
         async with aiohttp.ClientSession() as session:
             user_id = await get_user_id(session, username)
-
             if not user_id:
                 await interaction.followup.send("❌ Username Roblox non valido.", ephemeral=True)
                 return
@@ -84,7 +86,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
                 await interaction.followup.send("❌ Non fai parte del gruppo richiesto.", ephemeral=True)
                 return
 
-        # Salva nel DB
+        # Salvataggio nel DB
         cursor.execute("""
             INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data)
             VALUES (?, ?, ?, ?)
@@ -96,7 +98,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         ))
         db.commit()
 
-        # Embed di conferma
+        # Embed
         embed = Embed(
             title="✅ Cittadinanza Approvata",
             color=discord.Color.green(),
@@ -115,9 +117,17 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         await interaction.followup.send("✅ Cittadinanza approvata e registrata nel sistema.", ephemeral=True)
 
     except Exception as e:
-        print(f"Errore nella richiesta cittadinanza: {e}")
+        print(f"[ERRORE] {e}")
         if not interaction.response.is_done():
-            await interaction.response.send_message("❌ Errore interno durante la richiesta. Riprova.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Errore interno. Riprova.", ephemeral=True)
+            except:
+                pass
+        else:
+            try:
+                await interaction.followup.send("❌ Errore interno. Riprova.", ephemeral=True)
+            except:
+                pass
 
 # === COMANDO: CERCA CITTADINO ===
 @bot.tree.command(name="cerca_cittadino", description="Cerca un cittadino nel database.")
