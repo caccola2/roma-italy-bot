@@ -69,21 +69,27 @@ async def on_ready():
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
     try:
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except discord.NotFound:
-            print("❗ Interazione scaduta o già gestita.")
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except discord.NotFound:
+                print("❗ Interazione scaduta o già gestita.")
+                return
+        else:
+            print("❗ Interazione già gestita.")
             return
 
+        # Ottieni l'ID utente Roblox da username
         async with aiohttp.ClientSession() as session:
             user_id = await get_user_id(session, username)
             if not user_id:
                 await interaction.followup.send("❌ Username Roblox non valido.", ephemeral=True)
                 return
 
-            in_gruppo = await is_user_in_group(user_id)
-            if not in_gruppo:
-                await interaction.followup.send("❌ Non fai parte del gruppo richiesto.", ephemeral=True)
+            # Controlla se è nel gruppo 5043872
+            in_group = await is_user_in_group(user_id, 5043872)
+            if not in_group:
+                await interaction.followup.send("❌ Non fai parte del gruppo richiesto (5043872).", ephemeral=True)
                 return
 
         # Salvataggio nel DB
@@ -98,36 +104,34 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
         ))
         db.commit()
 
-        # Embed
-        embed = Embed(
-            title="✅ Cittadinanza Approvata",
-            color=discord.Color.green(),
+        # Embed di conferma
+        embed = discord.Embed(
+            title="📜 Nuova Richiesta di Cittadinanza",
+            color=discord.Color.blue(),
             timestamp=datetime.utcnow()
         )
-        embed.add_field(name="Utente Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
-        embed.add_field(name="Username Roblox", value=f"{username} ({user_id})", inline=False)
-        embed.add_field(name="Link Profilo", value=f"https://www.roblox.com/users/{user_id}/profile", inline=False)
+        embed.add_field(name="👤 Utente Discord", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
+        embed.add_field(name="🎮 Username Roblox", value=f"`{username}` (`{user_id}`)", inline=False)
+        embed.add_field(name="🔗 Profilo", value=f"https://www.roblox.com/users/{user_id}/profile", inline=False)
         embed.set_thumbnail(url=f"https://www.roblox.com/headshot-thumbnail/image?userId={user_id}&width=420&height=420&format=png")
         embed.set_footer(text="Sistema Cittadinanza")
 
+        # Log nel canale
         canale_log = bot.get_channel(CANALE_LOG)
         if canale_log:
             await canale_log.send(embed=embed)
 
-        await interaction.followup.send("✅ Cittadinanza approvata e registrata nel sistema.", ephemeral=True)
+        await interaction.followup.send("✅ Richiesta di cittadinanza inviata e registrata con successo.", ephemeral=True)
 
     except Exception as e:
-        print(f"[ERRORE] {e}")
-        if not interaction.response.is_done():
-            try:
+        print(f"[ERRORE INTERNO] {e}")
+        try:
+            if not interaction.response.is_done():
                 await interaction.response.send_message("❌ Errore interno. Riprova.", ephemeral=True)
-            except:
-                pass
-        else:
-            try:
+            else:
                 await interaction.followup.send("❌ Errore interno. Riprova.", ephemeral=True)
-            except:
-                pass
+        except:
+            pass
 
 # === COMANDO: CERCA CITTADINO ===
 @bot.tree.command(name="cerca_cittadino", description="Cerca un cittadino nel database.")
