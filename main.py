@@ -7,8 +7,7 @@ from discord import app_commands, Interaction, Embed
 from datetime import datetime
 
 # === CONFIGURAZIONE ===
-GROUP_ID = 5043872  # ✅ NUOVO GRUPPO per cittadinanza
-COOKIE = os.getenv("ROBLOX_COOKIE")
+GROUP_ID = 5043872  # ✅ Gruppo Roblox per cittadinanza
 ROMA_TOKEN = os.getenv("ROMA_TOKEN")
 
 CANALE_RICHIESTE = 1402403913826701442
@@ -35,7 +34,6 @@ def ha_permessi(user: discord.User) -> bool:
     return any(role.id == ID_RUOLO_ADMIN for role in getattr(user, "roles", []))
 
 # === UTILITY ===
-# Funzione per ottenere user_id da username Roblox
 async def get_user_id(session, username: str) -> int | None:
     url = f"https://api.roblox.com/users/get-by-username?username={username}"
     async with session.get(url) as resp:
@@ -44,7 +42,6 @@ async def get_user_id(session, username: str) -> int | None:
         data = await resp.json()
         return data.get("Id") if data.get("Success") else None
 
-# Funzione per verificare se l'utente è nel gruppo Roblox
 async def is_user_in_group(session, user_id: int, group_id: int) -> bool:
     url = f"https://groups.roblox.com/v1/users/{user_id}/groups/roles"
     async with session.get(url) as resp:
@@ -60,7 +57,6 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     try:
         await interaction.response.defer(ephemeral=True)
     except discord.errors.InteractionResponded:
-        # Già risposto, esci
         return
     except discord.errors.NotFound:
         print("❗ Interazione scaduta prima del defer.")
@@ -72,8 +68,8 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
             await interaction.followup.send("❌ Username Roblox non valido o utente non trovato.", ephemeral=True)
             return
 
-        if not await is_user_in_group(session, user_id, 5043872):
-            await interaction.followup.send("❌ Non fai parte del gruppo richiesto (5043872).", ephemeral=True)
+        if not await is_user_in_group(session, user_id, GROUP_ID):
+            await interaction.followup.send(f"❌ Non fai parte del gruppo richiesto ({GROUP_ID}).", ephemeral=True)
             return
 
     cursor.execute("""
@@ -87,7 +83,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     ))
     db.commit()
 
-    embed = discord.Embed(
+    embed = Embed(
         title="📜 Nuova Richiesta di Cittadinanza",
         color=discord.Color.blue(),
         timestamp=datetime.utcnow()
@@ -113,7 +109,6 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Errore sincronizzazione: {e}")
     print(f"🤖 Bot online come {bot.user}")
-
 
 # === COMANDO: CERCA CITTADINO ===
 @bot.tree.command(name="cerca_cittadino", description="Cerca un cittadino nel database.")
@@ -150,6 +145,5 @@ async def rimuovi_cittadino(interaction: Interaction, discord_id: str):
     db.commit()
     await interaction.response.send_message("✅ Cittadino rimosso dal database.", ephemeral=True)
 
-# Avvio
-bot.run(os.getenv("ROMA_TOKEN"))
-
+# === AVVIO BOT ===
+bot.run(ROMA_TOKEN)
