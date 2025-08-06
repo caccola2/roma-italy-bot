@@ -69,8 +69,8 @@ async def on_ready():
     print(f"Bot connesso come {client.user}")
 
 # ======= COMANDI =======
-@client.tree.command(name="richiesta_cittadinanza", description="Richiedi la cittadinanza")
-async def richiesta(interaction: Interaction):
+@tree.command(name="richiesta_cittadinanza")
+async def richiesta(interaction: discord.Interaction):
     await interaction.response.send_modal(CittadinanzaModal())
 
 @client.tree.command(name="cerca_soggetto", description="Cerca soggetto per nome roblox")
