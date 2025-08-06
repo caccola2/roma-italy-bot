@@ -73,19 +73,21 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     except discord.errors.InteractionResponded:
         return
     except discord.errors.NotFound:
-        print("❗ Interazione scaduta prima del defer.")
+        print("Interazione scaduta prima del defer.")
         return
 
     async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, username)
+        user_id = await get_roblox_user_id(session, username)
         if not user_id:
             await interaction.followup.send("❌ Username Roblox non valido o utente non trovato.", ephemeral=True)
             return
 
-        if not await is_user_in_group(session, user_id, GROUP_ID):
+        in_group = await check_user_in_group(session, user_id, GROUP_ID)
+        if not in_group:
             await interaction.followup.send(f"❌ Non fai parte del gruppo richiesto ({GROUP_ID}).", ephemeral=True)
             return
 
+    # Salvataggio nel DB
     cursor.execute("""
         INSERT OR REPLACE INTO cittadini (user_id, username, roblox_id, data)
         VALUES (?, ?, ?, ?)
