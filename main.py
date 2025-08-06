@@ -5,9 +5,11 @@ import sqlite3
 from discord.ext import commands
 from discord import app_commands, Interaction, Embed
 from datetime import datetime
+import asyncio
 
 # === CONFIGURAZIONE ===
-GROUP_ID = 5043872  # ✅ Gruppo Roblox per cittadinanza
+GROUP_ID = 5043872  # ✅ NUOVO GRUPPO per cittadinanza
+COOKIE = os.getenv("ROBLOX_COOKIE")
 ROMA_TOKEN = os.getenv("ROMA_TOKEN")
 
 CANALE_RICHIESTE = 1402403913826701442
@@ -34,21 +36,33 @@ def ha_permessi(user: discord.User) -> bool:
     return any(role.id == ID_RUOLO_ADMIN for role in getattr(user, "roles", []))
 
 # === UTILITY ===
+# Funzione per ottenere user_id da username Roblox (API aggiornata)
 async def get_user_id(session, username: str) -> int | None:
-    url = f"https://api.roblox.com/users/get-by-username?username={username}"
-    async with session.get(url) as resp:
-        if resp.status != 200:
-            return None
-        data = await resp.json()
-        return data.get("Id") if data.get("Success") else None
+    url = "https://users.roblox.com/v1/usernames/users"
+    payload = {"usernames": [username], "excludeBannedUsers": True}
+    try:
+        async with session.post(url, json=payload, timeout=10) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            users = data.get("data", [])
+            if not users:
+                return None
+            return users[0].get("id")
+    except (asyncio.TimeoutError, aiohttp.ClientError):
+        return None
 
+# Funzione per verificare se l'utente è nel gruppo Roblox
 async def is_user_in_group(session, user_id: int, group_id: int) -> bool:
     url = f"https://groups.roblox.com/v1/users/{user_id}/groups/roles"
-    async with session.get(url) as resp:
-        if resp.status != 200:
-            return False
-        data = await resp.json()
-        return any(group['group']['id'] == group_id for group in data.get("data", []))
+    try:
+        async with session.get(url, timeout=10) as resp:
+            if resp.status != 200:
+                return False
+            data = await resp.json()
+            return any(group['group']['id'] == group_id for group in data.get("data", []))
+    except (asyncio.TimeoutError, aiohttp.ClientError):
+        return False
 
 # === COMANDO: RICHIEDI CITTADINANZA ===
 @bot.tree.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
@@ -145,5 +159,5 @@ async def rimuovi_cittadino(interaction: Interaction, discord_id: str):
     db.commit()
     await interaction.response.send_message("✅ Cittadino rimosso dal database.", ephemeral=True)
 
-# === AVVIO BOT ===
+# Avvio
 bot.run(ROMA_TOKEN)
