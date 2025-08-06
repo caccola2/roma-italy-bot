@@ -1,3 +1,4 @@
+# main.py
 import os
 import discord
 from discord.ext import commands
@@ -19,7 +20,7 @@ ADMIN_ID = 1400852786236887252
 intents = discord.Intents.default()
 intents.members = True
 client = commands.Bot(command_prefix="/", intents=intents)
-db_client = motor.motor_asyncio.AsyncIOMotorClient("mongodb://localhost:27017")
+db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = db_client["roma_bot"]
 richieste = db["richieste"]
 
@@ -31,7 +32,7 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
         username = self.roblox_name.value
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}) as resp:
+            async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}) as resp:
                 data = await resp.json()
                 if not data["data"]:
                     await interaction.response.send_message("❌ Utente Roblox non trovato.", ephemeral=True)
@@ -42,7 +43,7 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
 
             async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups") as resp:
                 groups = await resp.json()
-                if not any(g["id"] == GROUP_ID for g in groups):
+                if not any(g["id"] == GROUP_ID for g in groups.get("data", [])):
                     await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
                     return
 
@@ -102,9 +103,12 @@ async def on_interaction(interaction):
         return
 
     parts = interaction.data['custom_id'].split(":")
-    action, discord_id, roblox_id, roblox_username = parts
+    if len(parts) != 4:
+        return
 
+    action, discord_id, roblox_id, roblox_username = parts
     member = interaction.guild.get_member(int(discord_id))
+
     if action == "accetta":
         await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID))
         await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID))
