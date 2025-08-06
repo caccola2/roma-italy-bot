@@ -51,7 +51,7 @@ async def is_user_in_group(session, user_id: int, group_id: int) -> bool:
         return any(group['group']['id'] == group_id for group in data.get("data", []))
 
 # === COMANDO: RICHIEDI CITTADINANZA ===
-@app_commands.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
+@bot.tree.command(name="richiedi_cittadinanza", description="Invia richiesta per diventare cittadino.")
 @app_commands.describe(username="Il tuo username Roblox")
 async def richiedi_cittadinanza(interaction: Interaction, username: str):
     try:
@@ -83,7 +83,7 @@ async def richiedi_cittadinanza(interaction: Interaction, username: str):
     ))
     db.commit()
 
-    embed = Embed(
+    embed = discord.Embed(
         title="📜 Nuova Richiesta di Cittadinanza",
         color=discord.Color.blue(),
         timestamp=datetime.utcnow()
