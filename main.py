@@ -7,7 +7,7 @@ from discord.ui import Modal, TextInput, View, Button
 import motor.motor_asyncio
 import aiohttp
 
-# ======= CONFIG =======
+# ===== CONFIG =====
 TOKEN = os.getenv("ROMA_TOKEN")
 GROUP_ID = 5043872
 TURISTA_ROLE_ID = 1400852869489496185
@@ -18,13 +18,13 @@ ADMIN_ID = 1400852786236887252
 
 intents = discord.Intents.default()
 intents.members = True
-client = commands.Bot(command_prefix="/", intents=intents)  # ha già client.tree
+client = commands.Bot(command_prefix="/", intents=intents)
 
 db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = db_client["roma_bot"]
 richieste = db["richieste"]
 
-# ======= MODAL =======
+# ===== MODAL CITTADINANZA =====
 class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
     roblox_name = TextInput(label="Nome utente Roblox", style=TextStyle.short, required=True)
 
@@ -49,22 +49,98 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
         embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
         embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
         embed.add_field(name="Roblox", value=f"{username} (ID: {user_id})")
+        embed.set_footer(text="In attesa di revisione")
 
-        view = View()
-        view.add_item(Button(label="Accetta", style=ButtonStyle.success, custom_id=f"accetta:{interaction.user.id}:{user_id}:{username}"))
-        view.add_item(Button(label="Rifiuta", style=ButtonStyle.danger, custom_id=f"rifiuta:{interaction.user.id}:{user_id}:{username}"))
+        view = RichiestaView(
+            discord_user=interaction.user,
+            roblox_id=user_id,
+            roblox_username=username
+        )
 
-        channel = client.get_channel(CANALE_RICHIESTE_ID)
-        await channel.send(embed=embed, view=view)
-        await interaction.response.send_message("✅ Richiesta inviata.", ephemeral=True)
+        canale = client.get_channel(CANALE_RICHIESTE_ID)
+        messaggio = await canale.send(embed=embed, view=view)
+        view.message = messaggio  # salva per modifica dopo
 
-# ======= BOT READY =======
-@client.event
-async def on_ready():
-    await client.tree.sync()
-    print(f"Bot connesso come {client.user}")
+        await interaction.message.delete() if interaction.message else None
+        await interaction.response.send_message("✅ Richiesta inviata con successo.", ephemeral=True)
 
-# ======= COMANDI =======
+# ===== VIEW CON PULSANTI =====
+class RichiestaView(View):
+    def __init__(self, discord_user, roblox_id, roblox_username):
+        super().__init__(timeout=None)
+        self.discord_user = discord_user
+        self.roblox_id = roblox_id
+        self.roblox_username = roblox_username
+        self.message = None
+
+    @discord.ui.button(label="✅ Accetta", style=ButtonStyle.success)
+    async def accetta(self, interaction: Interaction, button: Button):
+        member = interaction.guild.get_member(self.discord_user.id)
+        if not member:
+            await interaction.response.send_message("❌ Utente non trovato nel server.", ephemeral=True)
+            return
+
+        await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
+        await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
+
+        await richieste.insert_one({
+            "discord_id": str(member.id),
+            "discord_tag": str(member),
+            "roblox_id": str(self.roblox_id),
+            "roblox_username": self.roblox_username,
+            "data": discord.utils.utcnow()
+        })
+
+        esiti = client.get_channel(CANALE_ESITI_ID)
+        await esiti.send(f"✅ {member.mention} è stato accettato come cittadino.")
+
+        # modifica embed
+        embed = self.message.embeds[0]
+        embed.color = discord.Color.green()
+        embed.set_footer(text="Esito: ACCETTATO ✅")
+        await self.message.edit(embed=embed, view=None)
+
+        try:
+            await self.discord_user.send(embed=discord.Embed(
+                title="✅ Cittadinanza Approvata",
+                description="La tua richiesta è stata approvata. Benvenuto!",
+                color=discord.Color.green()
+            ))
+        except:
+            pass
+
+        await interaction.response.send_message("Richiesta approvata.", ephemeral=True)
+
+    @discord.ui.button(label="❌ Rifiuta", style=ButtonStyle.danger)
+    async def rifiuta(self, interaction: Interaction, button: Button):
+        class MotivoRifiutoModal(Modal, title="Motivazione Rifiuto"):
+            motivo = TextInput(label="Motivazione", style=TextStyle.paragraph)
+
+            async def on_submit(self, modal_interaction: Interaction):
+                embed = self.message.embeds[0]
+                embed.color = discord.Color.red()
+                embed.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
+                await self.message.edit(embed=embed, view=None)
+
+                esiti = client.get_channel(CANALE_ESITI_ID)
+                await esiti.send(
+                    f"❌ Richiesta rifiutata per {self.discord_user.mention}.\n**Motivo:** {self.motivo.value}"
+                )
+
+                try:
+                    await self.discord_user.send(embed=discord.Embed(
+                        title="❌ Cittadinanza Rifiutata",
+                        description=f"Motivo del rifiuto:\n```{self.motivo.value}```",
+                        color=discord.Color.red()
+                    ))
+                except:
+                    pass
+
+                await modal_interaction.response.send_message("Richiesta rifiutata.", ephemeral=True)
+
+        await interaction.response.send_modal(MotivoRifiutoModal())
+
+# ===== COMANDI =====
 @client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 async def richiesta(interaction: Interaction):
     await interaction.response.send_modal(CittadinanzaModal())
@@ -95,46 +171,11 @@ async def elimina(interaction: Interaction, roblox_username: str):
     else:
         await interaction.response.send_message("❌ Nessun soggetto trovato.", ephemeral=True)
 
-# ======= GESTIONE BUTTON =======
+# ===== READY =====
 @client.event
-async def on_interaction(interaction):
-    if interaction.type != discord.InteractionType.component:
-        return
+async def on_ready():
+    await client.tree.sync()
+    print(f"🟢 Bot connesso come {client.user}")
 
-    parts = interaction.data['custom_id'].split(":")
-    if len(parts) != 4:
-        return
-
-    action, discord_id, roblox_id, roblox_username = parts
-    member = interaction.guild.get_member(int(discord_id))
-
-    if action == "accetta":
-        await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID))
-        await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID))
-
-        await richieste.insert_one({
-            "discord_id": discord_id,
-            "discord_tag": member.name,
-            "roblox_id": roblox_id,
-            "roblox_username": roblox_username,
-            "data": discord.utils.utcnow()
-        })
-
-        canale_esiti = client.get_channel(CANALE_ESITI_ID)
-        await canale_esiti.send(f"✅ Richiesta approvata: {member.mention} è ora cittadino.")
-        await interaction.response.send_message("Richiesta approvata.", ephemeral=True)
-
-    elif action == "rifiuta":
-        class RifiutoModal(Modal, title="Motivazione Rifiuto"):
-            motivo = TextInput(label="Motivazione", style=TextStyle.paragraph)
-
-            async def on_submit(self, modal_interaction: Interaction):
-                canale_esiti = client.get_channel(CANALE_ESITI_ID)
-                await canale_esiti.send(f"❌ Richiesta rifiutata per {member.mention}. Motivo: {self.motivo.value}")
-                await modal_interaction.response.send_message("Richiesta rifiutata.", ephemeral=True)
-
-        await interaction.response.send_modal(RifiutoModal())
-
-# ======= AVVIO =======
+# ===== AVVIO =====
 client.run(TOKEN)
-
