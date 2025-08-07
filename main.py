@@ -147,7 +147,7 @@ async def richiesta(interaction: Interaction):
 
 # ===== COMANDO CERCA SOGGETTO =====
 @app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
-@has_admin_role()
+@has_admin_ID()
 async def cerca_soggetto(interaction: discord.Interaction, nome: str):
     soggetto = await richieste.find_one({"nome": nome})
     if soggetto:
