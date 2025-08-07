@@ -1,4 +1,3 @@
-# main.py
 import os
 import discord
 from discord.ext import commands
@@ -6,6 +5,7 @@ from discord import app_commands, Interaction, ButtonStyle, TextStyle
 from discord.ui import Modal, TextInput, View, Button
 import motor.motor_asyncio
 import aiohttp
+from pymongo import MongoClient
 
 # ===== CONFIG =====
 TOKEN = os.getenv("ROMA_TOKEN")
@@ -23,6 +23,7 @@ client = commands.Bot(command_prefix="/", intents=intents)
 db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = db_client["roma_bot"]
 richieste = db["richieste"]
+
 
 # ===== MODAL CITTADINANZA =====
 class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
