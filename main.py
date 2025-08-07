@@ -6,6 +6,8 @@ from discord.ui import Modal, TextInput, View, Button
 import motor.motor_asyncio
 import aiohttp
 from pymongo import MongoClient
+from discord import app_commands, Interaction
+from discord.app_commands import check
 
 # ===== CONFIG =====
 TOKEN = os.getenv("ROMA_TOKEN")
@@ -23,6 +25,25 @@ client = commands.Bot(command_prefix="/", intents=intents)
 db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = db_client["roma_bot"]
 richieste = db["richieste"]
+
+# Definizione check per ruolo admin
+def has_admin_role():
+    async def predicate(interaction: Interaction) -> bool:
+        admin_role_id = 1400852786236887252
+        guild = interaction.guild
+        if guild is None:
+            return False
+        member = guild.get_member(interaction.user.id)
+        if member is None:
+            return False
+        return any(role.id == admin_role_id for role in member.roles)
+    return app_commands.check(predicate)
+
+# Definizione check per ID admin singolo
+def has_admin_ID():
+    async def predicate(interaction: Interaction) -> bool:
+        return interaction.user.id == 1400852786236887252
+    return app_commands.check(predicate)
 
 # ===== MODAL CITTADINANZA =====
 class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
@@ -174,7 +195,7 @@ async def richiesta(interaction: Interaction):
 # ===== COMANDO CERCA SOGGETTO =====
 @app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
 @has_admin_ID()
-async def cerca_soggetto(interaction: discord.Interaction, nome: str):
+async def cerca_soggetto(interaction: Interaction, nome: str):
     soggetto = await richieste.find_one({"nome": nome})
     if soggetto:
         embed = discord.Embed(title="📄 Soggetto trovato", color=discord.Color.green())
@@ -190,7 +211,7 @@ async def cerca_soggetto(interaction: discord.Interaction, nome: str):
 # ===== COMANDO ELIMINA SOGGETTO =====
 @app_commands.command(name="elimina_soggetto", description="Elimina un soggetto dal database")
 @has_admin_role()
-async def elimina_soggetto(interaction: discord.Interaction, nome: str):
+async def elimina_soggetto(interaction: Interaction, nome: str):
     result = await richieste.delete_one({"nome": nome})
     if result.deleted_count > 0:
         await interaction.response.send_message(
@@ -202,6 +223,7 @@ async def elimina_soggetto(interaction: discord.Interaction, nome: str):
             "❌ Nessun soggetto trovato con questo nome.",
             ephemeral=True
         )
+
 # ===== READY =====
 @client.event
 async def on_ready():
