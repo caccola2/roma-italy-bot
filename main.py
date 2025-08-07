@@ -24,7 +24,6 @@ db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongo
 db = db_client["roma_bot"]
 richieste = db["richieste"]
 
-
 # ===== MODAL CITTADINANZA =====
 class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
     roblox_name = TextInput(label="Nome utente Roblox", style=TextStyle.short, required=True)
@@ -146,32 +145,37 @@ class RichiestaView(View):
 async def richiesta(interaction: Interaction):
     await interaction.response.send_modal(CittadinanzaModal())
 
-@client.tree.command(name="cerca_soggetto", description="Cerca soggetto per nome Roblox")
-async def cerca(interaction: Interaction, roblox_username: str):
-    if interaction.user.id != ADMIN_ID:
-        await interaction.response.send_message("Non hai il permesso.", ephemeral=True)
-        return
-    user = await richieste.find_one({"roblox_username": roblox_username})
-    if user:
-        embed = discord.Embed(title="👤 Soggetto Trovato")
-        embed.add_field(name="Discord", value=f"<@{user['discord_id']}> ({user['discord_tag']})")
-        embed.add_field(name="Roblox", value=f"{user['roblox_username']} ({user['roblox_id']})")
-        embed.add_field(name="Data", value=str(user['data']))
-        await interaction.response.send_message(embed=embed)
+# ===== COMANDO CERCA SOGGETTO =====
+@app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
+@has_admin_role()
+async def cerca_soggetto(interaction: discord.Interaction, nome: str):
+    soggetto = await richieste.find_one({"nome": nome})
+    if soggetto:
+        embed = discord.Embed(title="📄 Soggetto trovato", color=discord.Color.green())
+        embed.add_field(name="Nome", value=soggetto["nome"], inline=False)
+        embed.add_field(name="Data Richiesta", value=soggetto["data_richiesta"], inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Nessun soggetto trovato.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Nessun soggetto trovato con questo nome.",
+            ephemeral=True
+        )
 
-@client.tree.command(name="elimina_soggetto", description="Elimina soggetto dal database")
-async def elimina(interaction: Interaction, roblox_username: str):
-    if interaction.user.id != ADMIN_ID:
-        await interaction.response.send_message("Non hai il permesso.", ephemeral=True)
-        return
-    result = await richieste.delete_one({"roblox_username": roblox_username})
-    if result.deleted_count:
-        await interaction.response.send_message("✅ Soggetto eliminato.")
+# ===== COMANDO ELIMINA SOGGETTO =====
+@app_commands.command(name="elimina_soggetto", description="Elimina un soggetto dal database")
+@has_admin_role()
+async def elimina_soggetto(interaction: discord.Interaction, nome: str):
+    result = await richieste.delete_one({"nome": nome})
+    if result.deleted_count > 0:
+        await interaction.response.send_message(
+            f"✅ Soggetto **{nome}** eliminato con successo.",
+            ephemeral=True
+        )
     else:
-        await interaction.response.send_message("❌ Nessun soggetto trovato.", ephemeral=True)
-
+        await interaction.response.send_message(
+            "❌ Nessun soggetto trovato con questo nome.",
+            ephemeral=True
+        )
 # ===== READY =====
 @client.event
 async def on_ready():
