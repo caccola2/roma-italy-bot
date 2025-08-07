@@ -91,8 +91,20 @@ class RichiestaView(View):
             "data": discord.utils.utcnow()
         })
 
-        esiti = client.get_channel(CANALE_ESITI_ID)
-        await esiti.send(f"✅ {member.mention} è stato accettato come cittadino.")
+esiti = client.get_channel(CANALE_ESITI_ID)
+
+# URL avatar Roblox (avatar headshot standard 48x48 px)
+avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=48&height=48&format=png"
+
+embed = discord.Embed(
+    title="✅ Richiesta Cittadinanza Approvata",
+    description=f"{member.mention} è stato accettato come cittadino.",
+    color=discord.Color.green()
+)
+embed.set_thumbnail(url=avatar_url)
+embed.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+
+await esiti.send(embed=embed)
 
         # modifica embed
         embed = self.message.embeds[0]
@@ -100,14 +112,19 @@ class RichiestaView(View):
         embed.set_footer(text="Esito: ACCETTATO ✅")
         await self.message.edit(embed=embed, view=None)
 
-        try:
-            await self.discord_user.send(embed=discord.Embed(
-                title="✅ Cittadinanza Approvata",
-                description="La tua richiesta è stata approvata. Benvenuto!",
-                color=discord.Color.green()
-            ))
-        except:
-            pass
+try:
+    avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=48&height=48&format=png"
+    embed = discord.Embed(
+        title="✅ Cittadinanza Approvata",
+        description="La tua richiesta è stata approvata. Benvenuto!",
+        color=discord.Color.green()
+    )
+    embed.set_thumbnail(url=avatar_url)
+    embed.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+
+    await self.discord_user.send(embed=embed)
+except:
+    pass
 
         await interaction.response.send_message("Richiesta approvata.", ephemeral=True)
 
@@ -122,19 +139,28 @@ class RichiestaView(View):
                 embed.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
                 await self.message.edit(embed=embed, view=None)
 
-                esiti = client.get_channel(CANALE_ESITI_ID)
-                await esiti.send(
-                    f"❌ Richiesta rifiutata per {self.discord_user.mention}.\n**Motivo:** {self.motivo.value}"
-                )
+esiti = client.get_channel(CANALE_ESITI_ID)
+avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=48&height=48&format=png"
+embed_esiti = discord.Embed(
+    title="❌ Richiesta Rifiutata",
+    description=f"Richiesta rifiutata per {self.discord_user.mention}.\n**Motivo:** {self.motivo.value}",
+    color=discord.Color.red()
+)
+embed_esiti.set_thumbnail(url=avatar_url)
+embed_esiti.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+await esiti.send(embed=embed_esiti)
 
-                try:
-                    await self.discord_user.send(embed=discord.Embed(
-                        title="❌ Cittadinanza Rifiutata",
-                        description=f"Motivo del rifiuto:\n```{self.motivo.value}```",
-                        color=discord.Color.red()
-                    ))
-                except:
-                    pass
+try:
+    embed_dm = discord.Embed(
+        title="❌ Cittadinanza Rifiutata",
+        description=f"Motivo del rifiuto:\n```{self.motivo.value}```",
+        color=discord.Color.red()
+    )
+    embed_dm.set_thumbnail(url=avatar_url)
+    embed_dm.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+    await self.discord_user.send(embed=embed_dm)
+except:
+    pass
 
                 await modal_interaction.response.send_message("Richiesta rifiutata.", ephemeral=True)
 
