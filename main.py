@@ -6,6 +6,7 @@ from discord import ButtonStyle
 import aiohttp
 import asyncio
 import os
+from discord import app_commands
 
 # Costanti da definire
 GROUP_ID = 5043872               # ID gruppo Roblox
@@ -203,10 +204,9 @@ async def on_ready():
     guild = discord.Object(id=guild_id)
 
     print(f"🔄 Pulizia comandi per la guild {guild_id}...")
-    # Cancella tutti i comandi registrati nella guild
-    client.tree.clear_commands(guild=guild)
-
-    # Registra di nuovo i comandi attuali
+    # cancella comandi
+    await client.tree.clear_commands(guild=guild)
+    # sincronizza
     synced = await client.tree.sync(guild=guild)
 
     print(f"✅ Bot connesso come {client.user}")
@@ -214,7 +214,7 @@ async def on_ready():
     for cmd in synced:
         print(f"  • /{cmd.name} — {cmd.description}")
 
-    print("⚡ Sincronizzazione completata. I comandi sono ora aggiornati istantaneamente nella tua guild.")
+    print("⚡ Sincronizzazione completata.")
 
 # ===== AVVIO =====
 client.run(ROMA_TOKEN)
