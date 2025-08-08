@@ -87,7 +87,6 @@ class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
         await interaction.response.send_message("✅ Richiesta inviata con successo.", ephemeral=True)
 
 # ===== VIEW CON PULSANTI =====
-# ===== VIEW CON PULSANTI =====
 class RichiestaView(View):
     def __init__(self, discord_user, roblox_id, roblox_username):
         super().__init__(timeout=None)
@@ -207,9 +206,6 @@ class RichiestaView(View):
                 await modal_interaction.response.send_message("Richiesta rifiutata.", ephemeral=True)
 
         await interaction.response.send_modal(MotivoRifiutoModal())
-nteraction.response.send_message("Richiesta rifiutata.", ephemeral=True)
-
-    await interaction.response.send_modal(MotivoRifiutoModal())
 
 # ===== COMANDI =====
 @client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
