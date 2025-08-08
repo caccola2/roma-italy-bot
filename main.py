@@ -1,12 +1,10 @@
 import discord
 from discord import app_commands, Interaction
-from discord.ui import View, Button
+from discord.ui import View, Button, Modal, TextInput
 from discord.ui import button
-from discord import ButtonStyle
+from discord import ButtonStyle, TextStyle
 import aiohttp
-import asyncio
 import os
-from discord import app_commands
 
 # Costanti da definire
 GROUP_ID = 5043872               # ID gruppo Roblox
@@ -17,10 +15,14 @@ CITTADINO_ROLE_ID = 1226305679398704168
 ROMA_TOKEN = os.getenv("ROMA_TOKEN")
 
 # db richieste, ad esempio un motore async MongoDB
-richieste = ...  # la tua collection/motore db async
+richieste = ...  # la tua collection/motore db async, assicurati che sia definita
 
-client = discord.Client(intents=discord.Intents.all())
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
+
 
 # ===== VIEW CON PULSANTI =====
 class RichiestaView(View):
@@ -39,8 +41,12 @@ class RichiestaView(View):
             return
 
         # Gestione ruoli
-        await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
-        await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
+        try:
+            await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
+            await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
+        except Exception as e:
+            await interaction.response.send_message(f"Errore nella gestione ruoli: {e}", ephemeral=True)
+            return
 
         # Salvataggio esito nel DB
         await richieste.insert_one({
@@ -99,7 +105,7 @@ class RichiestaView(View):
         view_parent = self
 
         class MotivoRifiutoModal(Modal, title="Motivazione Rifiuto"):
-            motivo = TextInput(label="Motivazione", style=TextStyle.paragraph)
+            motivo = TextInput(label="Motivazione", style=TextStyle.paragraph, required=True)
 
             async def on_submit(self, modal_interaction: Interaction):
                 avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={view_parent.roblox_id}&width=150&height=150&format=png"
@@ -157,6 +163,7 @@ class RichiestaView(View):
 
         await interaction.response.send_modal(MotivoRifiutoModal())
 
+
 # ===== COMANDO SLASH RICHIESTA =====
 @tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 @app_commands.describe(nome_roblox="Inserisci il tuo nome utente Roblox")
@@ -167,7 +174,7 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
         # Controlla esistenza utente Roblox
         async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [nome_roblox]}) as resp:
             data = await resp.json()
-            if not data["data"]:
+            if not data.get("data"):
                 await interaction.followup.send("❌ Utente Roblox non trovato.", ephemeral=True)
                 return
             user_data = data["data"][0]
@@ -176,13 +183,14 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
         # Controlla se l’utente è nel gruppo Roblox
         async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
             data = await resp.json()
-            if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
+            gruppi = data.get("data", [])
+            if not any(group["group"]["id"] == GROUP_ID for group in gruppi):
                 await interaction.followup.send("❌ Non fai parte del gruppo Roblox, richiesta rifiutata automaticamente.", ephemeral=True)
                 return
 
     embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
-    embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
-    embed.add_field(name="Roblox", value=f"{nome_roblox} (ID: {user_id})")
+    embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})", inline=False)
+    embed.add_field(name="Roblox", value=f"{nome_roblox} (ID: {user_id})", inline=False)
     embed.set_footer(text="In attesa di revisione")
 
     view = RichiestaView(
@@ -204,9 +212,7 @@ async def on_ready():
     guild = discord.Object(id=guild_id)
 
     print(f"🔄 Pulizia comandi per la guild {guild_id}...")
-    # cancella comandi
     await client.tree.clear_commands(guild=guild)
-    # sincronizza
     synced = await client.tree.sync(guild=guild)
 
     print(f"✅ Bot connesso come {client.user}")
@@ -215,6 +221,7 @@ async def on_ready():
         print(f"  • /{cmd.name} — {cmd.description}")
 
     print("⚡ Sincronizzazione completata.")
+
 
 # ===== AVVIO =====
 client.run(ROMA_TOKEN)
