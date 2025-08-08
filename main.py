@@ -1,89 +1,23 @@
-import os
 import discord
-from discord.ext import commands
-from discord import app_commands, Interaction, ButtonStyle, TextStyle
-from discord.ui import Modal, TextInput, View, Button
-import motor.motor_asyncio
+from discord import app_commands, Interaction
+from discord.ui import View, Button
+from discord.ui import button
+from discord import ButtonStyle, TextStyle, TextInput, Modal
 import aiohttp
+import asyncio
 
-# ===== CONFIG =====
-TOKEN = os.getenv("ROMA_TOKEN")
-GROUP_ID = 5043872
-TURISTA_ROLE_ID = 1400852869489496185
-CITTADINO_ROLE_ID = 1400856967534215188
+# Costanti da definire
+GROUP_ID = 5043872               # ID gruppo Roblox
 CANALE_RICHIESTE_ID = 1402403913826701442
 CANALE_ESITI_ID = 1402374664659144897
-ADMIN_ID = 1400852786236887252
+TURISTA_ROLE_ID = 1226305676708679740
+CITTADINO_ROLE_ID = 1226305679398704168
 
-intents = discord.Intents.default()
-intents.members = True
-client = commands.Bot(command_prefix="/", intents=intents)
+# db richieste, ad esempio un motore async MongoDB
+richieste = ...  # la tua collection/motore db async
 
-db_client = motor.motor_asyncio.AsyncIOMotorClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
-db = db_client["roma_bot"]
-richieste = db["richieste"]
-
-# Definizione check per ruolo admin
-def has_admin_role():
-    async def predicate(interaction: Interaction) -> bool:
-        admin_role_id = ADMIN_ID
-        guild = interaction.guild
-        if guild is None:
-            return False
-        member = guild.get_member(interaction.user.id)
-        if member is None:
-            return False
-        return any(role.id == admin_role_id for role in member.roles)
-    return app_commands.check(predicate)
-
-# Definizione check per ID admin singolo
-def has_admin_ID():
-    async def predicate(interaction: Interaction) -> bool:
-        return interaction.user.id == ADMIN_ID
-    return app_commands.check(predicate)
-
-# ===== MODAL CITTADINANZA =====
-class CittadinanzaModal(Modal, title="Richiesta Cittadinanza"):
-    roblox_name = TextInput(label="Nome utente Roblox", style=TextStyle.short, required=True)
-
-    async def on_submit(self, interaction: Interaction):
-        username = self.roblox_name.value
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}) as resp:
-                data = await resp.json()
-                if not data["data"]:
-                    await interaction.response.send_message("❌ Utente Roblox non trovato.", ephemeral=True)
-                    return
-                user_data = data["data"][0]
-                user_id = user_data["id"]
-
-            async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
-                data = await resp.json()
-                if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
-                    await interaction.response.send_message("❌ Non fai parte del gruppo Roblox.", ephemeral=True)
-                    return
-
-        embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
-        embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
-        embed.add_field(name="Roblox", value=f"{username} (ID: {user_id})")
-        embed.set_footer(text="In attesa di revisione")
-
-        view = RichiestaView(
-            discord_user=interaction.user,
-            roblox_id=user_id,
-            roblox_username=username
-        )
-
-        canale = client.get_channel(CANALE_RICHIESTE_ID)
-        messaggio = await canale.send(embed=embed, view=view)
-        view.message = messaggio  # salva per modifica dopo
-
-        # interaction.message può essere None, quindi controllo
-        if interaction.message:
-            await interaction.message.delete()
-
-        await interaction.response.send_message("✅ Richiesta inviata con successo.", ephemeral=True)
+client = discord.Client(intents=discord.Intents.all())
+tree = app_commands.CommandTree(client)
 
 # ===== VIEW CON PULSANTI =====
 class RichiestaView(View):
@@ -94,18 +28,18 @@ class RichiestaView(View):
         self.roblox_username = roblox_username
         self.message = None
 
-    @discord.ui.button(label="✅ Accetta", style=ButtonStyle.success)
+    @button(label="✅ Accetta", style=ButtonStyle.success)
     async def accetta(self, interaction: Interaction, button: Button):
         member = interaction.guild.get_member(self.discord_user.id)
         if not member:
             await interaction.response.send_message("❌ Utente non trovato nel server.", ephemeral=True)
             return
 
-        # Ruoli
+        # Gestione ruoli
         await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
         await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
 
-        # Salvataggio nel DB
+        # Salvataggio esito nel DB
         await richieste.insert_one({
             "discord_id": str(member.id),
             "discord_tag": str(member),
@@ -120,7 +54,6 @@ class RichiestaView(View):
         esiti = client.get_channel(CANALE_ESITI_ID)
         avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=150&height=150&format=png"
 
-        # Embed log esiti
         embed = discord.Embed(
             title="Richiesta - Cittadinanza",
             description=(
@@ -131,18 +64,18 @@ class RichiestaView(View):
             ),
             color=discord.Color.green()
         )
-        embed.set_image(url="https://i.imgur.com/vzjYlCI.png")  # Immagine elegante aggiornata
-        embed.set_thumbnail(url=avatar_url)  # Foto profilo Roblox di lato
+        embed.set_image(url="https://i.imgur.com/vzjYlCI.png")
+        embed.set_thumbnail(url=avatar_url)
         embed.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
         await esiti.send(embed=embed)
 
-        # Aggiorna embed messaggio originale
+        # Aggiorna embed nel messaggio originale
         embed_orig = self.message.embeds[0]
         embed_orig.color = discord.Color.green()
         embed_orig.set_footer(text="Esito: ACCETTATO ✅")
         await self.message.edit(embed=embed_orig, view=None)
 
-        # DM utente
+        # DM all’utente
         try:
             embed_dm = discord.Embed(
                 title="✅ Cittadinanza Approvata",
@@ -158,9 +91,9 @@ class RichiestaView(View):
 
         await interaction.response.send_message("Richiesta approvata.", ephemeral=True)
 
-    @discord.ui.button(label="❌ Rifiuta", style=ButtonStyle.danger)
+    @button(label="❌ Rifiuta", style=ButtonStyle.danger)
     async def rifiuta(self, interaction: Interaction, button: Button):
-        view_parent = self  # Per mantenere i dati nel modal
+        view_parent = self
 
         class MotivoRifiutoModal(Modal, title="Motivazione Rifiuto"):
             motivo = TextInput(label="Motivazione", style=TextStyle.paragraph)
@@ -175,7 +108,7 @@ class RichiestaView(View):
                 embed_orig.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
                 await view_parent.message.edit(embed=embed_orig, view=None)
 
-                # Salvataggio nel DB con motivo rifiuto
+                # Salvataggio DB con motivazione rifiuto
                 await richieste.insert_one({
                     "discord_id": str(view_parent.discord_user.id),
                     "discord_tag": str(view_parent.discord_user),
@@ -198,12 +131,12 @@ class RichiestaView(View):
                     ),
                     color=discord.Color.red()
                 )
-                embed_esiti.set_image(url="https://i.imgur.com/6r8V5Tu.png")  # Immagine rifiuto sopra
-                embed_esiti.set_thumbnail(url=avatar_url)  # Foto profilo Roblox di lato
+                embed_esiti.set_image(url="https://i.imgur.com/6r8V5Tu.png")
+                embed_esiti.set_thumbnail(url=avatar_url)
                 embed_esiti.set_footer(text=f"Gestito da {modal_interaction.user}", icon_url=modal_interaction.user.display_avatar.url)
                 await esiti.send(embed=embed_esiti)
 
-                # DM utente
+                # DM all’utente
                 try:
                     embed_dm = discord.Embed(
                         title="❌ Cittadinanza Rifiutata",
@@ -221,47 +154,45 @@ class RichiestaView(View):
 
         await interaction.response.send_modal(MotivoRifiutoModal())
 
-# ===== COMANDI =====
-@client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
-async def richiesta(interaction: Interaction):
-    # Rispondi subito per evitare timeout
-    await interaction.response.defer()
-    
-    # Ora invia il modal con followup (deferred response)
-    try:
-        await interaction.followup.send_modal(CittadinanzaModal())
-    except Exception as e:
-        await interaction.followup.send(f"Errore nell'apertura del modulo: {e}", ephemeral=True)
+# ===== COMANDO SLASH RICHIESTA =====
+@tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
+@app_commands.describe(nome_roblox="Inserisci il tuo nome utente Roblox")
+async def richiesta(interaction: Interaction, nome_roblox: str):
+    await interaction.response.defer(ephemeral=True)
 
-# ===== COMANDO CERCA SOGGETTO =====
-@app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
-@has_admin_ID()
-async def cerca_soggetto(interaction: Interaction, nome: str):
-    soggetto = await richieste.find_one({"roblox_username": nome})
-    if soggetto:
-        # Embed stile richieste cittadinanza
-        embed = discord.Embed(
-            title="Richiesta - Cittadinanza",
-            color=discord.Color.green() if soggetto.get("esito") == "Accettato" else discord.Color.red()
-        )
-        embed.add_field(name="Nome del richiedente", value=soggetto.get("roblox_username", "N/A"), inline=False)
-        embed.add_field(name="Esito", value=soggetto.get("esito", "N/A"), inline=False)
-        
-        if soggetto.get("esito") == "Rifiutato":
-            embed.add_field(name="Motivazione", value=soggetto.get("motivazione", "N/A"), inline=False)
+    async with aiohttp.ClientSession() as session:
+        # Controlla esistenza utente Roblox
+        async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [nome_roblox]}) as resp:
+            data = await resp.json()
+            if not data["data"]:
+                await interaction.followup.send("❌ Utente Roblox non trovato.", ephemeral=True)
+                return
+            user_data = data["data"][0]
+            user_id = user_data["id"]
 
-        if soggetto.get("avatar_url"):
-            embed.set_thumbnail(url=soggetto["avatar_url"])
+        # Controlla se l’utente è nel gruppo Roblox
+        async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
+            data = await resp.json()
+            if not any(group["group"]["id"] == GROUP_ID for group in data.get("data", [])):
+                await interaction.followup.send("❌ Non fai parte del gruppo Roblox, richiesta rifiutata automaticamente.", ephemeral=True)
+                return
 
-        embed.set_footer(
-            text=f"Richiesta visionata da {soggetto.get('gestito_da', 'N/A')}",
-            icon_url=interaction.user.display_avatar.url
-        )
+    embed = discord.Embed(title="📥 Richiesta Cittadinanza", color=discord.Color.blue())
+    embed.add_field(name="Discord", value=f"{interaction.user.mention} ({interaction.user.id})")
+    embed.add_field(name="Roblox", value=f"{nome_roblox} (ID: {user_id})")
+    embed.set_footer(text="In attesa di revisione")
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ Nessun soggetto trovato con questo nome.", ephemeral=True)
+    view = RichiestaView(
+        discord_user=interaction.user,
+        roblox_id=user_id,
+        roblox_username=nome_roblox
+    )
 
+    canale = client.get_channel(CANALE_RICHIESTE_ID)
+    messaggio = await canale.send(embed=embed, view=view)
+    view.message = messaggio
+
+    await interaction.followup.send("✅ Richiesta inviata con successo.", ephemeral=True)
 # ===== COMANDO ELIMINA SOGGETTO =====
 @app_commands.command(name="elimina_soggetto", description="Elimina un soggetto dal database")
 @has_admin_role()
