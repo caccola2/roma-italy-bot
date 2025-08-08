@@ -215,4 +215,4 @@ async def on_ready():
     print("⚡ Sincronizzazione completata. I comandi sono ora aggiornati istantaneamente nella tua guild.")
 
 # ===== AVVIO =====
-client.run(TOKEN)
+client.run(ROMA_TOKEN)
