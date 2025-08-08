@@ -5,6 +5,7 @@ from discord import app_commands, Interaction, ButtonStyle, TextStyle
 from discord.ui import Modal, TextInput, View, Button
 import motor.motor_asyncio
 import aiohttp
+from datetime import datetime
 
 # ===== CONFIG =====
 TOKEN = os.getenv("ROMA_TOKEN")
@@ -101,9 +102,11 @@ class RichiestaView(View):
             await interaction.response.send_message("❌ Utente non trovato nel server.", ephemeral=True)
             return
 
+        # Ruoli
         await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
         await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
 
+        # Salvataggio nel DB
         await richieste.insert_one({
             "discord_id": str(member.id),
             "discord_tag": str(member),
@@ -113,34 +116,41 @@ class RichiestaView(View):
         })
 
         esiti = client.get_channel(CANALE_ESITI_ID)
+        avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=150&height=150&format=png"
 
-        avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=48&height=48&format=png"
-
+        # Embed log esiti
         embed = discord.Embed(
-            title="✅ Richiesta Cittadinanza Approvata",
-            description=f"{member.mention} è stato accettato come cittadino.",
+            title="Richiesta - Cittadinanza",
+            description=(
+                f" **Utente Discord:** {member.mention}\n"
+                f" **Roblox ID:** `{self.roblox_id}`\n"
+                f" **Username Roblox:** `{self.roblox_username}`\n\n"
+                "**Esito:** ✅ **APPROVATO**"
+            ),
             color=discord.Color.green()
         )
         embed.set_thumbnail(url=avatar_url)
-        embed.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
-
+        embed.set_image(url="https://i.imgur.com/D7iqR0F.png")  # Immagine elegante in alto
+        embed.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
         await esiti.send(embed=embed)
 
-        # modifica embed
-        embed = self.message.embeds[0]
-        embed.color = discord.Color.green()
-        embed.set_footer(text="Esito: ACCETTATO ✅")
-        await self.message.edit(embed=embed, view=None)
+        # Aggiorna embed messaggio originale
+        embed_orig = self.message.embeds[0]
+        embed_orig.color = discord.Color.green()
+        embed_orig.set_footer(text="Esito: ACCETTATO ✅")
+        await self.message.edit(embed=embed_orig, view=None)
 
+        # DM utente
         try:
-            embed = discord.Embed(
+            embed_dm = discord.Embed(
                 title="✅ Cittadinanza Approvata",
-                description="La tua richiesta è stata approvata. Benvenuto!",
+                description="La tua richiesta è stata **approvata**.\nBenvenuto tra i cittadini! 🏛",
                 color=discord.Color.green()
             )
-            embed.set_thumbnail(url=avatar_url)
-            embed.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
-            await self.discord_user.send(embed=embed)
+            embed_dm.set_thumbnail(url=avatar_url)
+            embed_dm.set_image(url="https://i.imgur.com/D7iqR0F.png")
+            embed_dm.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
+            await self.discord_user.send(embed=embed_dm)
         except:
             pass
 
@@ -152,22 +162,32 @@ class RichiestaView(View):
             motivo = TextInput(label="Motivazione", style=TextStyle.paragraph)
 
             async def on_submit(self, modal_interaction: Interaction):
-                embed = self.message.embeds[0]
-                embed.color = discord.Color.red()
-                embed.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
-                await self.message.edit(embed=embed, view=None)
-
+                avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=150&height=150&format=png"
                 esiti = client.get_channel(CANALE_ESITI_ID)
-                avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=48&height=48&format=png"
+
+                # Aggiorna embed messaggio originale
+                embed_orig = self.message.embeds[0]
+                embed_orig.color = discord.Color.red()
+                embed_orig.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
+                await self.message.edit(embed=embed_orig, view=None)
+
+                # Log esito rifiuto
                 embed_esiti = discord.Embed(
-                    title="❌ Richiesta Rifiutata",
-                    description=f"Richiesta rifiutata per {self.discord_user.mention}.\n**Motivo:** {self.motivo.value}",
+                    title="Richiesta - Cittadinanza",
+                    description=(
+                        f" **Roblox ID:** `{self.roblox_id}`\n"
+                        f" **Username Roblox:** `{self.roblox_username}`\n\n"
+                        f"**Esito:** **RIFIUTATO**\n"
+                        f"**Motivo:** {self.motivo.value}"
+                    ),
                     color=discord.Color.red()
                 )
                 embed_esiti.set_thumbnail(url=avatar_url)
-                embed_esiti.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+                embed_esiti.set_image(url="https://i.imgur.com/6r8V5Tu.png")  # Immagine rifiuto
+                embed_esiti.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
                 await esiti.send(embed=embed_esiti)
 
+                # DM utente
                 try:
                     embed_dm = discord.Embed(
                         title="❌ Cittadinanza Rifiutata",
@@ -175,7 +195,8 @@ class RichiestaView(View):
                         color=discord.Color.red()
                     )
                     embed_dm.set_thumbnail(url=avatar_url)
-                    embed_dm.set_footer(text=f"Gestito da: {interaction.user}", icon_url=interaction.user.display_avatar.url)
+                    embed_dm.set_image(url="https://i.imgur.com/6r8V5Tu.png")
+                    embed_dm.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
                     await self.discord_user.send(embed=embed_dm)
                 except:
                     pass
@@ -195,9 +216,25 @@ async def richiesta(interaction: Interaction):
 async def cerca_soggetto(interaction: Interaction, nome: str):
     soggetto = await richieste.find_one({"nome": nome})
     if soggetto:
-        embed = discord.Embed(title="📄 Soggetto trovato", color=discord.Color.green())
-        embed.add_field(name="Nome", value=soggetto.get("nome", "N/A"), inline=False)
-        embed.add_field(name="Data Richiesta", value=str(soggetto.get("data_richiesta", "N/A")), inline=False)
+        # Embed stile richieste cittadinanza
+        embed = discord.Embed(
+            title="Richiesta - Cittadinanza",
+            color=discord.Color.green() if soggetto.get("esito") == "Accettato" else discord.Color.red()
+        )
+        embed.add_field(name="Nome del richiedente", value=soggetto.get("nome", "N/A"), inline=False)
+        embed.add_field(name="Esito", value=soggetto.get("esito", "N/A"), inline=False)
+        
+        if soggetto.get("esito") == "Rifiutato":
+            embed.add_field(name="Motivazione", value=soggetto.get("motivazione", "N/A"), inline=False)
+
+        if soggetto.get("avatar_url"):
+            embed.set_thumbnail(url=soggetto["avatar_url"])
+
+        embed.set_footer(
+            text=f"Richiesta visionata da {soggetto.get('gestito_da', 'N/A')}",
+            icon_url=interaction.user.display_avatar.url
+        )
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
         await interaction.response.send_message("❌ Nessun soggetto trovato con questo nome.", ephemeral=True)
