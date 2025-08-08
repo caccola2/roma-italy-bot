@@ -21,7 +21,6 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 client = discord.Client(intents=intents)
-tree = app_commands.CommandTree(client)
 
 
 # ===== VIEW CON PULSANTI =====
@@ -165,7 +164,7 @@ class RichiestaView(View):
 
 
 # ===== COMANDO SLASH RICHIESTA =====
-@tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
+@client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 @app_commands.describe(nome_roblox="Inserisci il tuo nome utente Roblox")
 async def richiesta(interaction: Interaction, nome_roblox: str):
     await interaction.response.defer(ephemeral=True)
