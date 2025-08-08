@@ -193,15 +193,7 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
     view.message = messaggio
 
     await interaction.followup.send("✅ Richiesta inviata con successo.", ephemeral=True)
-# ===== COMANDO ELIMINA SOGGETTO =====
-@app_commands.command(name="elimina_soggetto", description="Elimina un soggetto dal database")
-@has_admin_role()
-async def elimina_soggetto(interaction: Interaction, nome: str):
-    result = await richieste.delete_one({"roblox_username": nome})
-    if result.deleted_count > 0:
-        await interaction.response.send_message(f"✅ Soggetto **{nome}** eliminato con successo.", ephemeral=True)
-    else:
-        await interaction.response.send_message("❌ Nessun soggetto trovato con questo nome.", ephemeral=True)
+
 
 @client.event
 async def on_ready():
