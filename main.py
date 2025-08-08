@@ -5,6 +5,7 @@ from discord.ui import button
 from discord import ButtonStyle
 import aiohttp
 import asyncio
+import os
 
 # Costanti da definire
 GROUP_ID = 5043872               # ID gruppo Roblox
@@ -12,6 +13,7 @@ CANALE_RICHIESTE_ID = 1402403913826701442
 CANALE_ESITI_ID = 1402374664659144897
 TURISTA_ROLE_ID = 1226305676708679740
 CITTADINO_ROLE_ID = 1226305679398704168
+ROMA_TOKEN = os.getenv("ROMA_TOKEN")
 
 # db richieste, ad esempio un motore async MongoDB
 richieste = ...  # la tua collection/motore db async
