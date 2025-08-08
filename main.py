@@ -224,7 +224,13 @@ class RichiestaView(View):
 # ===== COMANDI =====
 @client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 async def richiesta(interaction: Interaction):
-    await interaction.response.send_modal(CittadinanzaModal())
+    try:
+        await interaction.response.send_modal(CittadinanzaModal())
+    except discord.errors.NotFound:
+        # L'interazione è "scaduta", non si può rispondere
+        await interaction.followup.send("⏳ Tempo scaduto per inviare la richiesta, riprova.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Errore interno: {e}", ephemeral=True)
 
 # ===== COMANDO CERCA SOGGETTO =====
 @app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
