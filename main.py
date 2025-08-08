@@ -5,28 +5,22 @@ from discord.ui import View, Button, Modal, TextInput, button
 from discord.ext import commands
 import aiohttp
 
-# ===== CONFIG =====
 GROUP_ID = 5043872
 CANALE_RICHIESTE_ID = 1402403913826701442
 CANALE_ESITI_ID = 1402374664659144897
 TURISTA_ROLE_ID = 1226305676708679740
 CITTADINO_ROLE_ID = 1226305679398704168
-GUILD_ID = 1400851394595917937  # ID della guild usata per la sync (se vuoi locale)
+GUILD_ID = 1400851394595917937
 ROMA_TOKEN = os.getenv("ROMA_TOKEN")
 
-# db richieste, ad esempio un motore async MongoDB
-richieste = ...  # <-- inserisci qui la tua collection async (motor) o lascia placeholder
 
-# Intents
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-# Usa commands.Bot (ha .tree) — mantiene nome client per non cambiare il resto del codice
 client = commands.Bot(command_prefix="/", intents=intents)
-# client.tree è automaticamente disponibile su commands.Bot
 
-# ===== VIEW CON PULSANTI =====
+
 class RichiestaView(View):
     def __init__(self, discord_user, roblox_id, roblox_username):
         super().__init__(timeout=None)
@@ -42,7 +36,6 @@ class RichiestaView(View):
             await interaction.response.send_message("❌ Utente non trovato nel server.", ephemeral=True)
             return
 
-        # Gestione ruoli
         try:
             await member.remove_roles(discord.Object(id=TURISTA_ROLE_ID), reason="Accettato come cittadino")
             await member.add_roles(discord.Object(id=CITTADINO_ROLE_ID), reason="Accettato come cittadino")
@@ -50,8 +43,7 @@ class RichiestaView(View):
             await interaction.response.send_message(f"Errore nella gestione ruoli: {e}", ephemeral=True)
             return
 
-        # Salvataggio esito nel DB
-        # ATTENZIONE: richieste deve essere la tua collection motor.AsyncIOMotorCollection o funzione equivalente
+
         try:
             await richieste.insert_one({
                 "discord_id": str(member.id),
@@ -64,13 +56,11 @@ class RichiestaView(View):
                 "gestito_da": str(interaction.user)
             })
         except Exception:
-            # Se non vuoi che un errore DB blocchi tutto, lo silenziamo qui
             pass
 
         esiti = client.get_channel(CANALE_ESITI_ID)
         avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={self.roblox_id}&width=150&height=150&format=png"
 
-        # Embed log esiti
         embed = discord.Embed(
             title="Richiesta - Cittadinanza",
             description=(
@@ -87,14 +77,12 @@ class RichiestaView(View):
         if esiti:
             await esiti.send(embed=embed)
 
-        # Aggiorna embed messaggio originale
         if self.message and self.message.embeds:
             embed_orig = self.message.embeds[0]
             embed_orig.color = discord.Color.green()
             embed_orig.set_footer(text="Esito: ACCETTATO ✅")
             await self.message.edit(embed=embed_orig, view=None)
 
-        # DM utente
         try:
             embed_dm = discord.Embed(
                 title="✅ Cittadinanza Approvata",
@@ -121,14 +109,12 @@ class RichiestaView(View):
                 avatar_url = f"https://www.roblox.com/headshot-thumbnail/image?userId={view_parent.roblox_id}&width=150&height=150&format=png"
                 esiti = client.get_channel(CANALE_ESITI_ID)
 
-                # Aggiorna embed messaggio originale
                 if view_parent.message and view_parent.message.embeds:
                     embed_orig = view_parent.message.embeds[0]
                     embed_orig.color = discord.Color.red()
                     embed_orig.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
                     await view_parent.message.edit(embed=embed_orig, view=None)
 
-                # Salvataggio nel DB con motivo rifiuto
                 try:
                     await richieste.insert_one({
                         "discord_id": str(view_parent.discord_user.id),
@@ -143,7 +129,6 @@ class RichiestaView(View):
                 except Exception:
                     pass
 
-                # Log esito rifiuto
                 embed_esiti = discord.Embed(
                     title="Richiesta - Cittadinanza",
                     description=(
@@ -160,7 +145,6 @@ class RichiestaView(View):
                 if esiti:
                     await esiti.send(embed=embed_esiti)
 
-                # DM utente
                 try:
                     embed_dm = discord.Embed(
                         title="❌ Cittadinanza Rifiutata",
@@ -178,14 +162,12 @@ class RichiestaView(View):
 
         await interaction.response.send_modal(MotivoRifiutoModal())
 
-# ===== COMANDO SLASH RICHIESTA =====
 @client.tree.command(name="richiesta_cittadinanza", description="Invia richiesta cittadinanza Roblox")
 @app_commands.describe(nome_roblox="Inserisci il tuo nome utente Roblox")
 async def richiesta(interaction: Interaction, nome_roblox: str):
     await interaction.response.defer(ephemeral=True)
 
     async with aiohttp.ClientSession() as session:
-        # Controlla esistenza utente Roblox
         async with session.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [nome_roblox]}) as resp:
             data = await resp.json()
             if not data.get("data"):
@@ -194,7 +176,6 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
             user_data = data["data"][0]
             user_id = user_data["id"]
 
-        # Controlla se l’utente è nel gruppo Roblox
         async with session.get(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles") as resp:
             data = await resp.json()
             gruppi = data.get("data", [])
@@ -215,7 +196,6 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
 
     canale = client.get_channel(CANALE_RICHIESTE_ID)
     if canale is None:
-        # tenta il fetch se get_channel fallisce (es. bot appena connesso)
         try:
             canale = await client.fetch_channel(CANALE_RICHIESTE_ID)
         except Exception:
@@ -227,17 +207,14 @@ async def richiesta(interaction: Interaction, nome_roblox: str):
 
     await interaction.followup.send("✅ Richiesta inviata con successo.", ephemeral=True)
 
-# ===== ON_READY + SYNC =====
 @client.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
     print(f"🔄 Bot connesso come {client.user} — sincronizzo comandi per guild {GUILD_ID}...")
 
-    # Pulizia e sync comandi per la guild (evita mismatch)
     try:
         await client.tree.clear_commands(guild=guild)
     except Exception:
-        # se fallisce, ignoriamo e proviamo a sincronizzare comunque
         pass
 
     try:
@@ -248,7 +225,6 @@ async def on_ready():
 
     print(f"✅ Sincronizzazione completata. {len(synced)} comandi attivi per la guild {GUILD_ID}.")
 
-# ===== AVVIO =====
 if not ROMA_TOKEN:
     raise RuntimeError("ROMA_TOKEN non impostato nell'ambiente. Aggiungi la variabile d'ambiente ROMA_TOKEN.")
 
