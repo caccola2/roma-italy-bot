@@ -129,7 +129,7 @@ class RichiestaView(View):
             ),
             color=discord.Color.green()
         )
-        embed.set_image(url="https://i.imgur.com/D7iqR0F.png")  # Immagine elegante sopra
+        embed.set_image(url="https://i.imgur.com/vzjYlCI.png")  # Immagine elegante aggiornata
         embed.set_thumbnail(url=avatar_url)  # Foto profilo Roblox di lato
         embed.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
         await esiti.send(embed=embed)
@@ -147,7 +147,7 @@ class RichiestaView(View):
                 description="La tua richiesta è stata **approvata**.\nBenvenuto tra i cittadini! 🏛",
                 color=discord.Color.green()
             )
-            embed_dm.set_image(url="https://i.imgur.com/D7iqR0F.png")
+            embed_dm.set_image(url="https://i.imgur.com/vzjYlCI.png")
             embed_dm.set_thumbnail(url=avatar_url)
             embed_dm.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
             await self.discord_user.send(embed=embed_dm)
