@@ -2,7 +2,7 @@ import discord
 from discord import app_commands, Interaction
 from discord.ui import View, Button
 from discord.ui import button
-from discord import ButtonStyle, TextStyle, TextInput, Modal
+from discord import ButtonStyle
 import aiohttp
 import asyncio
 
