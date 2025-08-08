@@ -252,20 +252,22 @@ async def elimina_soggetto(interaction: Interaction, nome: str):
 
 @client.event
 async def on_ready():
-    # Sincronizzazione globale
-    synced_global = await client.tree.sync()
+    guild_id = 1400851394595917937  # ID del tuo server
+    guild = discord.Object(id=guild_id)
 
-    print(f"🟢 Bot connesso come {client.user}")
-    print(f"🌍 Comandi globali sincronizzati: {len(synced_global)}")
-    for cmd in synced_global:
-        print(f"  • {cmd.name} — {cmd.description}")
+    print(f"🔄 Pulizia comandi per la guild {guild_id}...")
+    # Cancella tutti i comandi registrati nella guild
+    client.tree.clear_commands(guild=guild)
 
-    # Sincronizzazione solo per la tua guild (più veloce in sviluppo)
-    guild = discord.Object(id=1400851394595917937)  # Sostituisci con il tuo server ID
-    synced_guild = await client.tree.sync(guild=guild)
-    print(f"🏠 Comandi in guild {guild.id}: {len(synced_guild)}")
-    for cmd in synced_guild:
-        print(f"  • {cmd.name} — {cmd.description}")
+    # Registra di nuovo i comandi attuali
+    synced = await client.tree.sync(guild=guild)
+
+    print(f"✅ Bot connesso come {client.user}")
+    print(f"📌 {len(synced)} comandi attivi per la guild {guild_id}:")
+    for cmd in synced:
+        print(f"  • /{cmd.name} — {cmd.description}")
+
+    print("⚡ Sincronizzazione completata. I comandi sono ora aggiornati istantaneamente nella tua guild.")
 
 # ===== AVVIO =====
 client.run(TOKEN)
