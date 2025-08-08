@@ -5,7 +5,6 @@ from discord import app_commands, Interaction, ButtonStyle, TextStyle
 from discord.ui import Modal, TextInput, View, Button
 import motor.motor_asyncio
 import aiohttp
-from datetime import datetime
 
 # ===== CONFIG =====
 TOKEN = os.getenv("ROMA_TOKEN")
@@ -112,7 +111,10 @@ class RichiestaView(View):
             "discord_tag": str(member),
             "roblox_id": str(self.roblox_id),
             "roblox_username": self.roblox_username,
-            "data": discord.utils.utcnow()
+            "data": discord.utils.utcnow(),
+            "esito": "Accettato",
+            "motivazione": None,
+            "gestito_da": str(interaction.user)
         })
 
         esiti = client.get_channel(CANALE_ESITI_ID)
@@ -173,6 +175,18 @@ class RichiestaView(View):
                 embed_orig.set_footer(text=f"Esito: RIFIUTATO ❌ — Motivo: {self.motivo.value}")
                 await view_parent.message.edit(embed=embed_orig, view=None)
 
+                # Salvataggio nel DB con motivo rifiuto
+                await richieste.insert_one({
+                    "discord_id": str(view_parent.discord_user.id),
+                    "discord_tag": str(view_parent.discord_user),
+                    "roblox_id": str(view_parent.roblox_id),
+                    "roblox_username": view_parent.roblox_username,
+                    "data": discord.utils.utcnow(),
+                    "esito": "Rifiutato",
+                    "motivazione": self.motivo.value,
+                    "gestito_da": str(modal_interaction.user)
+                })
+
                 # Log esito rifiuto
                 embed_esiti = discord.Embed(
                     title="Richiesta - Cittadinanza",
@@ -186,7 +200,7 @@ class RichiestaView(View):
                 )
                 embed_esiti.set_image(url="https://i.imgur.com/6r8V5Tu.png")  # Immagine rifiuto sopra
                 embed_esiti.set_thumbnail(url=avatar_url)  # Foto profilo Roblox di lato
-                embed_esiti.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
+                embed_esiti.set_footer(text=f"Gestito da {modal_interaction.user}", icon_url=modal_interaction.user.display_avatar.url)
                 await esiti.send(embed=embed_esiti)
 
                 # DM utente
@@ -198,7 +212,7 @@ class RichiestaView(View):
                     )
                     embed_dm.set_image(url="https://i.imgur.com/6r8V5Tu.png")
                     embed_dm.set_thumbnail(url=avatar_url)
-                    embed_dm.set_footer(text=f"Gestito da {interaction.user}", icon_url=interaction.user.display_avatar.url)
+                    embed_dm.set_footer(text=f"Gestito da {modal_interaction.user}", icon_url=modal_interaction.user.display_avatar.url)
                     await view_parent.discord_user.send(embed=embed_dm)
                 except:
                     pass
@@ -216,14 +230,14 @@ async def richiesta(interaction: Interaction):
 @app_commands.command(name="cerca_soggetto", description="Cerca un soggetto nel database")
 @has_admin_ID()
 async def cerca_soggetto(interaction: Interaction, nome: str):
-    soggetto = await richieste.find_one({"nome": nome})
+    soggetto = await richieste.find_one({"roblox_username": nome})
     if soggetto:
         # Embed stile richieste cittadinanza
         embed = discord.Embed(
             title="Richiesta - Cittadinanza",
             color=discord.Color.green() if soggetto.get("esito") == "Accettato" else discord.Color.red()
         )
-        embed.add_field(name="Nome del richiedente", value=soggetto.get("nome", "N/A"), inline=False)
+        embed.add_field(name="Nome del richiedente", value=soggetto.get("roblox_username", "N/A"), inline=False)
         embed.add_field(name="Esito", value=soggetto.get("esito", "N/A"), inline=False)
         
         if soggetto.get("esito") == "Rifiutato":
@@ -245,12 +259,11 @@ async def cerca_soggetto(interaction: Interaction, nome: str):
 @app_commands.command(name="elimina_soggetto", description="Elimina un soggetto dal database")
 @has_admin_role()
 async def elimina_soggetto(interaction: Interaction, nome: str):
-    result = await richieste.delete_one({"nome": nome})
+    result = await richieste.delete_one({"roblox_username": nome})
     if result.deleted_count > 0:
         await interaction.response.send_message(f"✅ Soggetto **{nome}** eliminato con successo.", ephemeral=True)
     else:
         await interaction.response.send_message("❌ Nessun soggetto trovato con questo nome.", ephemeral=True)
-
 
 @client.event
 async def on_ready():
